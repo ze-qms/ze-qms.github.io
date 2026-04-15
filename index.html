@@ -1371,7 +1371,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.3</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1504,7 +1504,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.5.2',
+  version: '19.5.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3090,6 +3090,17 @@ async function initFirebase() {
           userData = { empNo: 'admin', name: '관리자', role: 'admin', createdAt: new Date().toISOString().slice(0,10) };
           await dbRef('users/' + user.uid).set(userData);
         }
+        // 현재 환경에 없으면 루트 경로 fallback (v14.1.0 이전 생성 계정 호환)
+        if (!userData && firebaseDb) {
+          const rootSnap = await firebaseDb.ref('users/' + user.uid).once('value');
+          const rootData = rootSnap.val();
+          if (rootData) {
+            // 루트 데이터를 현재 환경 경로로 자동 복사
+            await dbRef('users/' + user.uid).set(rootData);
+            userData = rootData;
+            console.log('사용자 데이터를 루트에서 ' + APP_ENV + '/ 로 자동 이전했습니다:', user.uid);
+          }
+        }
         if (userData) {
           currentUser = { uid: user.uid, empNo: emailToEmpNo(user.email), name: userData.name, role: userData.role };
           window._myAuditorProfile = undefined; // v17.2.0: 캐시 초기화
@@ -3099,14 +3110,13 @@ async function initFirebase() {
             onLoginSuccess();
           }
         } else {
-          // DB에 사용자 정보 없음 → 다른 환경에서 생성된 계정일 수 있음
+          // DB에 사용자 정보 없음 (루트 포함)
           await firebaseAuth.signOut();
           currentUser = null;
-          // showLoginScreen/showLoginForm이 에러를 clear하므로 setTimeout으로 이후에 표시
           setTimeout(() => {
             const errEl = document.getElementById('loginError');
             if (errEl) {
-              errEl.textContent = '[DB 레코드 없음] 이 환경(' + APP_ENV + ')에 등록되지 않은 계정입니다. 관리자에게 문의하거나 환경간 데이터 복사를 실행해주세요.';
+              errEl.textContent = '이 환경(' + APP_ENV + ')에 등록되지 않은 계정입니다. 관리자가 사용자 추가 메뉴에서 계정을 새로 등록해주세요.';
               errEl.style.display = 'block';
             }
           }, 300);
