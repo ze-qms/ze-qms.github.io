@@ -1253,10 +1253,18 @@ select.apple-input {
               </select>
             </div>
             <div style="display:flex;align-items:flex-end;padding-top:16px;">
-              <button onclick="copyEnvData()" class="pill-btn pill-btn-primary" style="background:#22C55E;border-color:#22C55E;white-space:nowrap;">복사 실행</button>
+              <button onclick="showCopyEnvConfirm()" class="pill-btn pill-btn-primary" style="background:#22C55E;border-color:#22C55E;white-space:nowrap;">복사 실행</button>
             </div>
           </div>
-          <p style="font-size:11px;color:#D20015;margin:0;">⚠ 대상 환경의 기존 데이터가 덮어써집니다.</p>
+          <!-- 인라인 확인창 -->
+          <div id="copyEnvConfirm" style="display:none;margin-top:10px;padding:12px;background:rgba(210,0,21,0.06);border:1px solid rgba(210,0,21,0.25);border-radius:10px;">
+            <p id="copyEnvConfirmMsg" style="font-size:13px;color:#303A3C;margin:0 0 10px;font-weight:500;"></p>
+            <div style="display:flex;gap:8px;">
+              <button onclick="copyEnvData()" class="pill-btn pill-btn-primary" style="background:#D20015;border-color:#D20015;">확인 (덮어쓰기)</button>
+              <button onclick="document.getElementById('copyEnvConfirm').style.display='none'" class="pill-btn pill-btn-outline">취소</button>
+            </div>
+          </div>
+          <p style="font-size:11px;color:#D20015;margin-top:8px;margin-bottom:0;">⚠ 대상 환경의 기존 데이터가 덮어써집니다.</p>
         </div>
         <p style="font-size:12px;color:#9EA2A1;margin-top:8px;">저장 시 자동으로 Firebase에 동기화됩니다. 현재 환경: <strong id="envLabelInSync"></strong></p>
       </div>
@@ -1371,7 +1379,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.4</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.5</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1504,7 +1512,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.5.4',
+  version: '19.5.5',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -9838,6 +9846,23 @@ function toggleCopyEnvPanel() {
   }
 }
 
+function showCopyEnvConfirm() {
+  if (!requireRole('admin')) return;
+  if (!firebaseDb) { showToast('Firebase 연결 필요', 'error'); return; }
+  const sourceEl = document.getElementById('copyEnvSource');
+  const targetEl = document.getElementById('copyEnvTarget');
+  const sourceEnv = sourceEl ? sourceEl.value : null;
+  const targetEnv = targetEl ? targetEl.value : null;
+  if (!sourceEnv || !targetEnv) { showToast('환경을 선택해주세요.', 'error'); return; }
+  if (sourceEnv === targetEnv) { showToast('원본과 대상이 동일합니다.', 'error'); return; }
+  const sourceLabel = sourceEnv === 'live' ? '운영(live)' : sourceEnv === 'prod' ? '백업(prod)' : '테스트(test)';
+  const targetLabel = targetEnv === 'live' ? '운영(live)' : targetEnv === 'prod' ? '백업(prod)' : '테스트(test)';
+  const msgEl = document.getElementById('copyEnvConfirmMsg');
+  if (msgEl) msgEl.textContent = sourceLabel + ' 데이터를 ' + targetLabel + '에 복사합니다. 대상의 기존 데이터가 덮어써집니다.';
+  const confirmDiv = document.getElementById('copyEnvConfirm');
+  if (confirmDiv) confirmDiv.style.display = 'block';
+}
+
 async function copyEnvData() {
   if (!requireRole('admin')) return;
   if (!firebaseDb) { showToast('Firebase 연결 필요', 'error'); return; }
@@ -9850,9 +9875,9 @@ async function copyEnvData() {
   if (!sourceEnv || !targetEnv) { showToast('환경을 선택해주세요.', 'error'); return; }
   if (sourceEnv === targetEnv) { showToast('원본과 대상이 동일합니다.', 'error'); return; }
 
-  const sourceLabel = sourceEnv === 'live' ? '운영' : sourceEnv === 'prod' ? '백업' : '테스트';
-  const targetLabel = targetEnv === 'live' ? '운영' : targetEnv === 'prod' ? '백업' : '테스트';
-  if (!confirm(sourceLabel + '(' + sourceEnv + ') 데이터를 ' + targetLabel + '(' + targetEnv + ')로 복사합니다.\n대상 데이터가 덮어써집니다. 진행하시겠습니까?')) return;
+  // 확인창 닫기
+  const confirmDiv = document.getElementById('copyEnvConfirm');
+  if (confirmDiv) confirmDiv.style.display = 'none';
 
   showLoading('환경 간 데이터 복사 중...');
   try {
@@ -9867,13 +9892,11 @@ async function copyEnvData() {
       }
     }
     if (count === 0) {
-      showToast(sourceLabel + '(' + sourceEnv + ')에 복사할 데이터가 없습니다.', 'warning');
+      showToast(sourceEnv + '에 복사할 데이터가 없습니다.', 'warning');
       hideLoading(); return;
     }
     await firebaseDb.ref('/').update(migrationData);
     showToast(count + '개 컬렉션: ' + sourceEnv + ' → ' + targetEnv + ' 복사 완료!', 'success');
-    const panel = document.getElementById('copyEnvPanel');
-    if (panel) panel.classList.add('hidden');
   } catch(e) {
     console.error('copyEnvData error:', e);
     showToast('복사 실패: ' + (e.message || '알 수 없는 오류'), 'error');
