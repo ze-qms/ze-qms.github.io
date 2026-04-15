@@ -1371,7 +1371,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1504,7 +1504,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.5.0',
+  version: '19.5.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3099,9 +3099,16 @@ async function initFirebase() {
             onLoginSuccess();
           }
         } else {
-          // DB에 사용자 정보 없음 (비정상) → 로그아웃
+          // DB에 사용자 정보 없음 → 다른 환경에서 생성된 계정일 수 있음
           await firebaseAuth.signOut();
+          currentUser = null;
           showLoginScreen();
+          // 에러 메시지 표시
+          const errEl = document.getElementById('loginError');
+          if (errEl) {
+            errEl.textContent = '이 환경에 등록되지 않은 계정입니다. 관리자에게 계정 등록을 요청하거나, 관리 메뉴의 환경간 데이터 복사를 실행해주세요.';
+            errEl.style.display = 'block';
+          }
         }
       } else {
         // 비로그인 → 로그인 화면
@@ -3363,6 +3370,7 @@ async function renderUserManagement() {
     html += `<div><label class="apple-label">사번</label><input id="newUserEmpNo" type="text" inputmode="numeric" maxlength="7" placeholder="7자리" class="apple-input"></div>`;
     html += `<div><label class="apple-label">이름</label><input id="newUserName" type="text" placeholder="이름" class="apple-input"></div>`;
     html += `<div><label class="apple-label">역할</label><select id="newUserRole" class="apple-input"><option value="auditor">심사원</option><option value="viewer">뷰어</option><option value="admin">관리자</option></select></div>`;
+    html += `<div><label class="apple-label">관리자 비밀번호</label><input id="newUserAdminPw" type="password" placeholder="본인 비밀번호" class="apple-input"></div>`;
     html += `<div style="display:flex;align-items:flex-end;"><button onclick="createNewUser()" class="pill-btn pill-btn-primary" style="width:100%;">추가</button></div>`;
     html += `</div>`;
     html += `<div id="newUserResult" style="margin-top:8px;font-size:13px;"></div>`;
@@ -3382,10 +3390,11 @@ async function createNewUser() {
   // 임시 비밀번호 생성
   const tempPw = empNo.slice(-4) + '00';
   const adminEmail = currentUser.empNo + AUTH_DOMAIN;
+  const adminPwEl = document.getElementById('newUserAdminPw');
+  const adminPwPrompt = adminPwEl ? adminPwEl.value : '';
+  if (!adminPwPrompt) { resultEl.innerHTML = '<span style="color:#D20015;">관리자 비밀번호를 입력해주세요.</span>'; return; }
   try {
     resultEl.innerHTML = '<span style="color:#9EA2A1;">생성 중...</span>';
-    const adminPwPrompt = prompt('계정 생성을 위해 관리자 비밀번호를 입력해주세요:');
-    if (!adminPwPrompt) { resultEl.innerHTML = ''; return; }
     // createUser 시 자동 로그인 방지 플래그
     _suppressAuthRedirect = true;
     try {
@@ -3398,6 +3407,7 @@ async function createNewUser() {
     } finally {
       _suppressAuthRedirect = false;
     }
+    if (adminPwEl) adminPwEl.value = '';
     document.getElementById('newUserEmpNo').value = '';
     document.getElementById('newUserName').value = '';
     // 임시 비밀번호를 alert로 안내 (닫기 전까지 유지)
