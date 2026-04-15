@@ -1230,10 +1230,9 @@ select.apple-input {
           <button onclick="uploadAllToFirebase()" class="pill-btn pill-btn-primary">전체 데이터 업로드</button>
           <button onclick="downloadFromFirebase()" class="pill-btn pill-btn-outline">Firebase에서 불러오기</button>
           <button onclick="migrateDataToEnvPrefix()" class="pill-btn pill-btn-outline" style="border-color:#F59E0B;color:#F59E0B;">루트→환경 마이그레이션</button>
-          <button onclick="toggleCopyEnvPanel()" class="pill-btn pill-btn-outline" style="border-color:#22C55E;color:#22C55E;">환경간 데이터 복사</button>
         </div>
-        <!-- 환경간 데이터 복사 패널 -->
-        <div id="copyEnvPanel" class="hidden" style="margin-top:16px;padding:16px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:12px;">
+        <!-- 환경간 데이터 복사 — 항상 표시 -->
+        <div style="margin-top:16px;padding:16px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:12px;">
           <p style="font-size:13px;font-weight:600;color:#303A3C;margin:0 0 12px;">환경간 데이터 복사</p>
           <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
             <div style="flex:1;min-width:120px;">
@@ -1253,10 +1252,11 @@ select.apple-input {
                 <option value="test">test (테스트)</option>
               </select>
             </div>
+            <div style="display:flex;align-items:flex-end;padding-top:16px;">
+              <button onclick="copyEnvData()" class="pill-btn pill-btn-primary" style="background:#22C55E;border-color:#22C55E;white-space:nowrap;">복사 실행</button>
+            </div>
           </div>
-          <p style="font-size:11px;color:#D20015;margin:0 0 12px;">⚠ 대상 환경의 기존 데이터가 덮어써집니다.</p>
-          <button onclick="copyEnvData()" class="pill-btn pill-btn-primary" style="background:#22C55E;border-color:#22C55E;">복사 실행</button>
-          <button onclick="toggleCopyEnvPanel()" class="pill-btn pill-btn-outline" style="margin-left:8px;">취소</button>
+          <p style="font-size:11px;color:#D20015;margin:0;">⚠ 대상 환경의 기존 데이터가 덮어써집니다.</p>
         </div>
         <p style="font-size:12px;color:#9EA2A1;margin-top:8px;">저장 시 자동으로 Firebase에 동기화됩니다. 현재 환경: <strong id="envLabelInSync"></strong></p>
       </div>
@@ -1371,7 +1371,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.3</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.4</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1383,7 +1383,7 @@ select.apple-input {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="color:#566062;">빌드 날짜</span>
-          <span style="font-weight:500;color:#9EA2A1;">2026-04-14</span>
+          <span style="font-weight:500;color:#9EA2A1;">2026-04-15</span>
         </div>
       </div>
     </div>
@@ -1504,7 +1504,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.5.3',
+  version: '19.5.4',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
