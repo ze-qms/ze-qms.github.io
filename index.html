@@ -1379,7 +1379,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.5.7</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.6.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1391,7 +1391,7 @@ select.apple-input {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="color:#566062;">빌드 날짜</span>
-          <span style="font-weight:500;color:#9EA2A1;">2026-04-15</span>
+          <span style="font-weight:500;color:#9EA2A1;">2026-04-16</span>
         </div>
       </div>
     </div>
@@ -1512,7 +1512,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.5.7',
+  version: '19.6.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -4461,8 +4461,11 @@ function renderChecklistItems(items, scores, remarks, type, options) {
       html += `<button class="score-btn na-btn ${naSelected2}" style="flex:0 0 auto;padding:0 14px;font-size:13px;" onclick="${sp}${options.binaryScoreHandler}('${item.id}', 'NA', this${catArg})">N/A</button>`;
       html += '</div>';
     } else {
+      // 2/4점 전용 감지: maturity에 1,3이 없고 2,4만 있으면 → [2, 4]만 표시
+      const gradeValues = (item.maturity && !item.maturity[1] && !item.maturity[3] && item.maturity[2] && item.maturity[4])
+        ? [2, 4] : [1, 2, 3, 4];
       html += `<div class="flex gap-2">`;
-      for (const v of [1, 2, 3, 4]) {
+      for (const v of gradeValues) {
         const isSelected = selected === v;
         const selStyle = isSelected ? `background:${SCORE_COLORS[v]};color:#fff;` : '';
         const catArg = options.catIdx !== undefined ? `, ${options.catIdx}` : '';
