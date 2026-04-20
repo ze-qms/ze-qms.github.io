@@ -21,6 +21,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -105,6 +106,36 @@ p, span, td, th, label, div {
 }
 .tab-inactive:hover {
   color: #1a1c1d;
+}
+
+/* Schedule Reorder (drag & drop) */
+.month-dropzone {
+  transition: background 0.2s, border-color 0.2s;
+}
+.month-dropzone.sortable-drag-over,
+.month-dropzone:hover {
+  border-color: #D20015 !important;
+}
+.schedule-chip {
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.schedule-chip:active {
+  cursor: grabbing !important;
+}
+.schedule-chip-chosen {
+  box-shadow: 0 4px 12px rgba(210,0,21,0.18) !important;
+}
+.schedule-chip-ghost {
+  opacity: 0.35;
+  background: #FEF2F3 !important;
+  border-style: dashed !important;
+}
+.schedule-chip-drag {
+  transform: rotate(1deg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18) !important;
 }
 
 /* Score Button */
@@ -1379,7 +1410,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.6.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.6.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1391,7 +1422,7 @@ select.apple-input {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="color:#566062;">빌드 날짜</span>
-          <span style="font-weight:500;color:#9EA2A1;">2026-04-16</span>
+          <span style="font-weight:500;color:#9EA2A1;">2026-04-17</span>
         </div>
       </div>
     </div>
@@ -1512,7 +1543,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.6.0',
+  version: '19.6.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8225,9 +8256,16 @@ function updateScheduleStatuses() {
 }
 
 function renderSchedule() {
+  if (schedulePhase !== 4 && window._scheduleReorderDirty) {
+    _revertScheduleReorderSilently();
+  }
   updateScheduleStatuses();
   if (schedulePhase === 3) {
     renderAddScheduleForm();
+    return;
+  }
+  if (schedulePhase === 4) {
+    renderScheduleReorder();
     return;
   }
   if (schedulePhase === 2 && currentScheduleId) {
@@ -8262,7 +8300,10 @@ function renderSchedule() {
     html += `<button onclick="window._scheduleViewYear=${y};renderSchedule();" style="border:none;border-radius:980px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;letter-spacing:-0.224px;background:${isActive?'#D20015':'transparent'};color:${isActive?'#fff':'#565A5B'};">${y}년</button>`;
   });
   html += '</div></div>';
-  html += '<button onclick="showAddScheduleForm()" class="pill-btn pill-btn-primary" style="flex-shrink:0;">+ 일정 추가</button>';
+  html += '<div style="display:flex;gap:8px;flex-shrink:0;">';
+  html += '<button onclick="setSchedulePhase(4)" class="pill-btn" style="background:#fff;color:#303A3C;border:1px solid #E5E7EB;">\u2195 \uc77c\uc815 \ubcc0\uacbd</button>';
+  html += '<button onclick="showAddScheduleForm()" class="pill-btn pill-btn-primary">+ \uc77c\uc815 \ucd94\uac00</button>';
+  html += '</div>';
   html += '</div>';
 
   // Summary stats
@@ -8449,6 +8490,212 @@ function scrollToMonthDetail(month) {
       break;
     }
   }
+}
+
+// === 일정 변경(드래그앤드롭) ===
+window._scheduleSortables = window._scheduleSortables || [];
+window._scheduleReorderSnapshot = window._scheduleReorderSnapshot || null;
+window._scheduleReorderDirty = !!window._scheduleReorderDirty;
+function _destroyScheduleSortables() {
+  if (window._scheduleSortables && window._scheduleSortables.length) {
+    window._scheduleSortables.forEach(s => { try { s.destroy(); } catch(e){} });
+  }
+  window._scheduleSortables = [];
+}
+function _ensureScheduleReorderSnapshot() {
+  if (!window._scheduleReorderSnapshot) {
+    window._scheduleReorderSnapshot = scheduleData.map(s => ({
+      id: s.id, month: s.month, dateStart: s.dateStart, dateEnd: s.dateEnd, status: s.status
+    }));
+  }
+}
+function _clearScheduleReorderSnapshot() {
+  window._scheduleReorderSnapshot = null;
+  window._scheduleReorderDirty = false;
+}
+function _revertScheduleReorderSilently() {
+  const snap = window._scheduleReorderSnapshot;
+  if (!snap) { _clearScheduleReorderSnapshot(); return; }
+  snap.forEach(s => {
+    const item = scheduleData.find(x => x.id === s.id);
+    if (item) {
+      item.month = s.month;
+      item.dateStart = s.dateStart;
+      item.dateEnd = s.dateEnd;
+      if (s.status !== undefined) item.status = s.status;
+    }
+  });
+  _clearScheduleReorderSnapshot();
+}
+function saveScheduleReorderChanges() {
+  if (!window._scheduleReorderDirty) { setSchedulePhase(1); return; }
+  try {
+    saveSchedule();
+    _clearScheduleReorderSnapshot();
+    if (typeof showToast === 'function') showToast('일정 변경이 저장되었습니다.', 'success');
+    setSchedulePhase(1);
+  } catch (e) {
+    console.error('saveScheduleReorderChanges error', e);
+    if (typeof showToast === 'function') showToast('저장 중 오류가 발생했습니다.', 'error');
+    else alert('저장 중 오류가 발생했습니다.');
+  }
+}
+function cancelScheduleReorderChanges() {
+  _revertScheduleReorderSilently();
+  if (typeof updateScheduleStatuses === 'function') updateScheduleStatuses();
+  if (typeof showToast === 'function') showToast('변경이 취소되었습니다.', 'info');
+  setSchedulePhase(1);
+}
+window.saveScheduleReorderChanges = saveScheduleReorderChanges;
+window.cancelScheduleReorderChanges = cancelScheduleReorderChanges;
+function remapYearMonth(dateStr, year, newMonth) {
+  const pad = n => String(n).padStart(2, '0');
+  if (!dateStr || typeof dateStr !== 'string' || dateStr.length < 10) {
+    return `${year}-${pad(newMonth)}-01`;
+  }
+  let day = parseInt(dateStr.substring(8, 10), 10);
+  if (!Number.isFinite(day) || day < 1) day = 1;
+  const lastDay = new Date(year, newMonth, 0).getDate();
+  if (day > lastDay) day = lastDay;
+  return `${year}-${pad(newMonth)}-${pad(day)}`;
+}
+function renderScheduleReorder() {
+  const currentYear = new Date().getFullYear();
+  if (typeof window._scheduleViewYear === 'undefined') window._scheduleViewYear = currentYear;
+  const scheduleYear = window._scheduleViewYear;
+
+  const monthMap = {};
+  for (let m = 1; m <= 12; m++) monthMap[m] = [];
+  scheduleData.filter(s => s.year === scheduleYear).forEach(s => {
+    if (!monthMap[s.month]) monthMap[s.month] = [];
+    monthMap[s.month].push(s);
+  });
+
+  const MONTH_LABEL = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  let html = '';
+
+  html += '<div class="flex flex-col sm:flex-row items-start sm:items-end justify-between mb-6 gap-3">';
+  html += '<div>';
+  html += `<h2 class="section-title">${scheduleYear}년 일정 변경</h2>`;
+  html += '<p class="section-subtitle mt-1">대상지를 다른 월로 드래그하여 이동하세요 &middot; 심사 기간의 일자는 유지되고 월만 변경됩니다</p>';
+  html += '<div class="flex gap-1 mt-3" style="background:#f9f9fb;border-radius:980px;padding:3px;display:inline-flex;">';
+  [currentYear - 2, currentYear - 1, currentYear, currentYear + 1].forEach(y => {
+    const isActive = y === scheduleYear;
+    html += `<button onclick="window._scheduleViewYear=${y};renderSchedule();" style="border:none;border-radius:980px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;letter-spacing:-0.224px;background:${isActive?'#D20015':'transparent'};color:${isActive?'#fff':'#565A5B'};">${y}년</button>`;
+  });
+  html += '</div></div>';
+  html += '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">';
+  html += '<button type="button" id="btnScheduleReorderCancel" class="pill-btn" style="background:#F3F4F6;color:#303A3C;border:1px solid #E5E7EB;">취소</button>';
+  html += '<button type="button" id="btnScheduleReorderSave" class="pill-btn pill-btn-primary">저장</button>';
+  html += '</div>';
+  html += '</div>';
+
+  if (window._scheduleReorderDirty) {
+    html += '<div style="background:#FFF7E6;border:1px solid #FBD38D;border-radius:12px;padding:12px 14px;margin-bottom:14px;">';
+    html += '<span style="font-size:13px;color:#8A5A00;font-weight:500;">● 저장되지 않은 변경이 있습니다. 우측 상단의 "저장" 버튼으로 확정하거나 "취소"로 되돌리세요.</span>';
+    html += '</div>';
+  }
+
+  html += '<div>';
+  html += '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">';
+  for (let m = 1; m <= 12; m++) {
+    const items = monthMap[m] || [];
+    html += `<div class="apple-card month-dropzone-wrap" style="padding:12px;">`;
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`;
+    html += `<div style="font-size:15px;font-weight:600;color:#303A3C;letter-spacing:-0.24px;">${MONTH_LABEL[m-1]}</div>`;
+    html += `<div style="font-size:11px;color:#9EA2A1;">${items.length}건</div>`;
+    html += `</div>`;
+    html += `<div class="month-dropzone" data-month="${m}" style="min-height:90px;padding:6px;border-radius:10px;background:#F9F9FB;border:1.5px dashed ${items.length === 0 ? '#DCDFE1' : 'transparent'};transition:all 0.2s;">`;
+    if (items.length === 0) {
+      html += `<div class="dropzone-placeholder" style="text-align:center;color:#C0CED1;font-size:11px;padding:28px 4px;pointer-events:none;">여기로 이동</div>`;
+    } else {
+      items.forEach(item => {
+        const st = calcScheduleStatus(item);
+        const isDivision = !!DIVISIONS[item.station];
+        const isOutsourcing = item.auditTarget === 'outsourcing' || (item.region === '협력사(본사)');
+        const dotColor = isDivision ? '#6366F1' : isOutsourcing ? '#F59E0B' : '#22C55E';
+        const dateStr = item.dateStart ? (item.dateEnd && item.dateEnd !== item.dateStart ? item.dateStart.substring(5) + ' ~ ' + item.dateEnd.substring(5) : item.dateStart.substring(5)) : '-';
+        const name = item.displayName || item.station || '(이름 없음)';
+        const snapItem = (window._scheduleReorderSnapshot || []).find(x => x.id === item.id);
+        const isMoved = snapItem && snapItem.month !== item.month;
+        const chipBorder = isMoved ? '2px solid #D20015' : '1px solid #E5E7EB';
+        const chipBg = isMoved ? '#FFF5F6' : '#fff';
+        html += `<div class="schedule-chip${isMoved ? ' schedule-chip-moved' : ''}" data-id="${item.id}" style="background:${chipBg};border:${chipBorder};border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,0.04);">`;
+        html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">`;
+        html += `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>`;
+        html += `<span style="font-size:12.5px;font-weight:600;color:#303A3C;letter-spacing:-0.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>`;
+        if (isMoved) {
+          html += `<span style="font-size:9.5px;font-weight:600;color:#fff;background:#D20015;padding:1px 6px;border-radius:980px;margin-left:auto;flex-shrink:0;">변경</span>`;
+        }
+        html += `</div>`;
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">`;
+        html += `<span style="font-size:10.5px;color:#9EA2A1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dateStr}</span>`;
+        html += `<span class="badge-pill" style="${getScheduleStatusBadgeStyle(st.status)};font-size:9.5px;padding:1px 6px;flex-shrink:0;">${st.label}</span>`;
+        html += `</div>`;
+        html += `</div>`;
+      });
+    }
+    html += `</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  html += '</div>';
+
+  const container = document.getElementById('scheduleContainer');
+  if (container) container.innerHTML = html;
+
+  const saveBtn = document.getElementById('btnScheduleReorderSave');
+  const cancelBtn = document.getElementById('btnScheduleReorderCancel');
+  if (saveBtn) saveBtn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); saveScheduleReorderChanges(); });
+  if (cancelBtn) cancelBtn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); cancelScheduleReorderChanges(); });
+
+  initScheduleDragDrop();
+}
+function initScheduleDragDrop() {
+  _destroyScheduleSortables();
+  if (typeof Sortable === 'undefined') {
+    console.warn('SortableJS가 로드되지 않았습니다.');
+    return;
+  }
+  const zones = document.querySelectorAll('.month-dropzone');
+  zones.forEach(zone => {
+    const s = new Sortable(zone, {
+      group: 'schedule',
+      animation: 180,
+      ghostClass: 'schedule-chip-ghost',
+      chosenClass: 'schedule-chip-chosen',
+      dragClass: 'schedule-chip-drag',
+      draggable: '.schedule-chip',
+      filter: '.dropzone-placeholder',
+      delay: 120,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 4,
+      onAdd: handleChipDrop,
+      onStart: (evt) => { document.querySelectorAll('.month-dropzone').forEach(z => z.style.background = '#F3F4F6'); },
+      onEnd: (evt) => { document.querySelectorAll('.month-dropzone').forEach(z => z.style.background = '#F9F9FB'); }
+    });
+    window._scheduleSortables.push(s);
+  });
+}
+function handleChipDrop(evt) {
+  const newMonth = parseInt(evt.to && evt.to.dataset ? evt.to.dataset.month : '0', 10);
+  const id = evt.item && evt.item.dataset ? evt.item.dataset.id : null;
+  if (!id || !Number.isFinite(newMonth) || newMonth < 1 || newMonth > 12) {
+    renderScheduleReorder();
+    return;
+  }
+  const item = scheduleData.find(s => s.id === id);
+  if (!item) { renderScheduleReorder(); return; }
+  if (newMonth === item.month) return;
+
+  _ensureScheduleReorderSnapshot();
+  item.month = newMonth;
+  item.dateStart = remapYearMonth(item.dateStart, item.year, newMonth);
+  item.dateEnd = remapYearMonth(item.dateEnd || item.dateStart, item.year, newMonth);
+  if (item.dateEnd < item.dateStart) item.dateEnd = item.dateStart;
+  if (typeof updateScheduleStatuses === 'function') updateScheduleStatuses();
+  window._scheduleReorderDirty = true;
+  renderScheduleReorder();
 }
 
 function showScheduleStation(scheduleId) {
