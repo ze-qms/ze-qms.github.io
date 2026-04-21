@@ -1429,7 +1429,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.9.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.9.5</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1574,7 +1574,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.9.2',
+  version: '19.9.5',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -12157,7 +12157,7 @@ function renderSDBarChart(d) {
       fill: false,
       tension: 0,
       order: 0,
-      datalabels: { display: true, color: '#565A5B', font: { size: 11, weight: '600' }, anchor: 'end', align: 'top', offset: 4, formatter: (v) => v ? v.toFixed(2) : '' }
+      datalabels: { display: true, color: '#1a1c1d', font: { size: 11, weight: '700' }, anchor: 'end', align: 'bottom', offset: 16, formatter: (v) => v ? v.toFixed(2) : '' }
     });
   }
   datasets.push({
