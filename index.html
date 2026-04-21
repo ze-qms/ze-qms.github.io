@@ -22,6 +22,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -650,6 +652,23 @@ select.apple-input {
 .combobox-option:hover, .combobox-option.hl { background:rgba(210,0,21,0.08); }
 .combobox-option.selected { color:#D20015;font-weight:600; }
 .combobox-empty { padding:12px;text-align:center;font-size:13px;color:#6E7273; }
+/* 상세 페이지 다운로드 메뉴 */
+.sd-download-menu .sd-download-list {
+  position:absolute; top:calc(100% + 6px); right:0; min-width:240px;
+  background:#fff; border:1px solid #E5E7EB; border-radius:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.10);
+  padding:6px; display:none; z-index:50;
+}
+.sd-download-menu.open .sd-download-list,
+.sd-download-menu:hover .sd-download-list { display:block; }
+.sd-download-item {
+  display:block; width:100%; text-align:left;
+  padding:9px 12px; font-size:13px; color:#303A3C;
+  background:none; border:none; border-radius:8px; cursor:pointer;
+  transition:background 0.1s;
+}
+.sd-download-item:hover { background:rgba(210,0,21,0.08); color:#D20015; }
+.sd-download-item:disabled { color:#C0CED1; cursor:wait; }
 </style>
 </head>
 <body class="min-h-screen flex flex-col" style="background:#f9f9fb;">
@@ -1410,7 +1429,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.7.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.9.2</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1432,14 +1451,26 @@ select.apple-input {
   <!-- STATION DETAIL PAGE (단일 상세 페이지 — 어디서든 지점 클릭 시 표시) -->
   <!-- ================================================================== -->
   <div id="tabStationDetail" class="tab-content hidden fade-in">
-    <!-- 뒤로 버튼 + 제목 -->
-    <div class="flex items-center gap-3 mb-6">
+    <!-- 뒤로 버튼 + 제목 + 다운로드 메뉴 -->
+    <div class="flex items-center gap-3 mb-6" id="sdHeaderRow">
       <button onclick="closeStationDetail()" class="pill-btn pill-btn-outline" style="padding:6px 14px;font-size:13px;">
         <svg class="w-4 h-4 inline-block mr-1" style="vertical-align:-2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>뒤로
       </button>
       <div>
         <h2 id="sdTitle" class="section-title" style="margin:0;"></h2>
         <p id="sdSubtitle" class="section-subtitle" style="margin:2px 0 0;"></p>
+      </div>
+      <div id="sdDownloadMenu" class="sd-download-menu" style="margin-left:auto;position:relative;">
+        <button type="button" onclick="toggleSdDownloadMenu(event)" class="pill-btn pill-btn-outline" style="padding:6px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          다운로드
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="sd-download-list">
+          <button type="button" class="sd-download-item" onclick="downloadDetailPDF()">PDF로 저장</button>
+          <button type="button" class="sd-download-item" onclick="downloadDetailHTML()">HTML 파일로 저장</button>
+          <button type="button" class="sd-download-item" onclick="copyDetailHTMLToClipboard()">HTML 클립보드 복사 <span style="font-size:11px;color:#9EA2A1;">(그룹웨어용)</span></button>
+        </div>
       </div>
     </div>
 
@@ -1543,7 +1574,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.7.0',
+  version: '19.9.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -6550,7 +6581,7 @@ function renderDivisionStats() {
     html += `<div style="padding:16px;cursor:pointer;" onclick="document.getElementById('${detailId}').classList.toggle('hidden');this.querySelector('svg').style.transform=document.getElementById('${detailId}').classList.contains('hidden')?'':'rotate(180deg)'">`;
     html += `<div class="flex justify-between items-center mb-2">`;
     html += `<div class="flex items-center gap-3">`;
-    html += `<span style="font-size:15px;font-weight:600;color:#303A3C;">${divName}</span>`;
+    html += `<span style="font-size:15px;">${stationLink(year, divName)}</span>`;
     html += `<span class="badge-pill" style="background:rgba(99,102,241,0.15);color:#6366F1;font-size:11px;">실/본부</span>`;
     html += `</div>`;
     html += `<div class="flex items-center gap-2">`;
@@ -11059,6 +11090,319 @@ function closeStationDetail() {
   switchTab(stationDetailPreviousTab);
 }
 
+// ========================================================================
+// 상세 페이지 다운로드 (PDF / HTML / 그룹웨어 클립보드 복사) — v19.8.0
+// ========================================================================
+
+function toggleSdDownloadMenu(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('sdDownloadMenu');
+  if (!menu) return;
+  menu.classList.toggle('open');
+}
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('sdDownloadMenu');
+  if (!menu || !menu.classList.contains('open')) return;
+  if (!menu.contains(e.target)) menu.classList.remove('open');
+});
+
+function getDetailFilename() {
+  const title = (document.getElementById('sdTitle')?.textContent || 'detail').trim();
+  const sub = (document.getElementById('sdSubtitle')?.textContent || '').trim();
+  const yearMatch = sub.match(/(\d{4})/);
+  const year = yearMatch ? yearMatch[1] : '';
+  const d = new Date();
+  const date = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  const safe = (s) => s.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/_+$/,'');
+  return `[안전기획팀]_${safe(title)}${year ? '_' + year : ''}_${date}`;
+}
+
+function _sdToast(msg, ok = true) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;left:50%;top:24px;transform:translateX(-50%);background:${ok?'#22C55E':'#D20015'};color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,0.15);z-index:9999;`;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2200);
+}
+
+// PDF 다운로드 — html2canvas + jsPDF
+async function downloadDetailPDF() {
+  console.log('[PDF] downloadDetailPDF called');
+  _sdToast('PDF 시작…');
+  const root = document.getElementById('tabStationDetail');
+  if (!root) { _sdToast('상세 페이지 컨테이너 없음', false); return; }
+  const menu = document.getElementById('sdDownloadMenu');
+  if (menu) menu.classList.remove('open');
+  const hasH2C = typeof html2canvas !== 'undefined';
+  const hasJsPDF = typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF;
+  console.log('[PDF] html2canvas:', hasH2C, 'jspdf:', hasJsPDF);
+  if (!hasH2C || !hasJsPDF) {
+    _sdToast(`PDF 라이브러리 로딩 실패 (h2c:${hasH2C}, jspdf:${hasJsPDF})`, false); return;
+  }
+  // 캡처에서 인터랙티브 요소 일시 숨김
+  const hideEls = root.querySelectorAll('#sdDownloadMenu, #sdCarEditBtn, button[onclick="closeStationDetail()"]');
+  hideEls.forEach(el => { el.dataset._prevDisplay = el.style.display; el.style.display = 'none'; });
+  _sdToast('PDF 생성 중…');
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageW = pdf.internal.pageSize.getWidth();   // 210mm
+    const pageH = pdf.internal.pageSize.getHeight();  // 297mm
+    const marginX = 12;
+    const marginY = 14;
+    const contentW = pageW - marginX * 2;
+    const contentH = pageH - marginY * 2;
+    const blockGap = 5;
+
+    let cursorY = marginY;
+
+    // 캡처 대상: root의 직접 자식 중 보이는 것 (헤더 포함 — 한글 폰트 지원 위해 이미지로)
+    // 헤더의 뒤로/다운로드 버튼은 hideEls로 이미 숨김 처리됨
+    const blocks = Array.from(root.children).filter(el =>
+      el.offsetHeight > 0 && getComputedStyle(el).display !== 'none'
+    );
+
+    const renderCanvasToPdf = (canvas) => {
+      const hMM = canvas.height * contentW / canvas.width;
+      // 한 페이지에 들어가면: 그대로
+      if (hMM <= contentH) {
+        if (cursorY > marginY && cursorY + hMM > pageH - marginY) {
+          pdf.addPage(); cursorY = marginY;
+        }
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', marginX, cursorY, contentW, hMM);
+        cursorY += hMM + blockGap;
+        return;
+      }
+      // 큰 블록: 페이지 단위 슬라이스
+      let srcY = 0;
+      const pxPerMM = canvas.height / hMM;
+      let remainHMM = hMM;
+      while (remainHMM > 0) {
+        const availMM = pageH - marginY - cursorY;
+        if (availMM < 30) { pdf.addPage(); cursorY = marginY; continue; }
+        const sliceMM = Math.min(remainHMM, availMM);
+        const sliceH = Math.floor(sliceMM * pxPerMM);
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width; slice.height = sliceH;
+        const sctx = slice.getContext('2d');
+        sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, slice.width, slice.height);
+        sctx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', marginX, cursorY, contentW, sliceMM);
+        srcY += sliceH;
+        remainHMM -= sliceMM;
+        if (remainHMM > 0) { pdf.addPage(); cursorY = marginY; }
+        else cursorY += sliceMM + blockGap;
+      }
+    };
+
+    for (const block of blocks) {
+      const c = await html2canvas(block, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      renderCanvasToPdf(c);
+    }
+
+    // 푸터: 페이지 번호 (helvetica는 한글 미지원이므로 ASCII만)
+    const totalPages = pdf.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      pdf.setPage(p);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor('#9EA2A1');
+      pdf.text(`${p} / ${totalPages}`, pageW - marginX, pageH - 6, { align: 'right' });
+    }
+
+    pdf.save(getDetailFilename() + '.pdf');
+    _sdToast('PDF 다운로드 완료');
+  } catch (err) {
+    console.error(err);
+    _sdToast('PDF 생성 실패: ' + (err?.message || err), false);
+  } finally {
+    hideEls.forEach(el => { el.style.display = el.dataset._prevDisplay || ''; delete el.dataset._prevDisplay; });
+  }
+}
+
+// 그룹웨어 페이스트용 HTML fragment 빌드
+// — <html>/<head>/<body>/<style>/<link>/<script>/class 금지
+// — 모든 스타일 inline, 차트 canvas → base64 PNG <img>
+// — 각 블록 자체 max-width:760px (외부 wrapper 의존 X)
+function buildExportHTML() {
+  const root = document.getElementById('tabStationDetail');
+  if (!root) return '';
+
+  const W760 = 'width:100%;max-width:760px;margin-left:0;margin-right:auto;box-sizing:border-box;';
+  const CARD = `background:#ffffff;border:1px solid #E5E7EB;border-radius:12px;padding:20px;margin:0 0 16px;${W760}`;
+  const TITLE = 'font-size:24px;font-weight:700;color:#1a1c1d;margin:0 0 4px;';
+  const SUBTITLE = 'font-size:13px;color:#9EA2A1;margin:0 0 16px;';
+  const H3 = 'font-size:15px;font-weight:600;color:#303A3C;margin:0 0 12px;';
+
+  // canvas → img(data URL) 매핑 (원본에서 미리 toDataURL)
+  const canvasMap = new Map();
+  root.querySelectorAll('canvas').forEach(c => {
+    try { canvasMap.set(c.id || c, c.toDataURL('image/png')); } catch(e) { /* tainted */ }
+  });
+
+  const clone = root.cloneNode(true);
+
+  // 1) 인터랙티브·편집 모드·UI-only 요소 제거 (id·class 기반 — 정리 단계 전에 먼저 제거)
+  const removeSel = [
+    '#sdDownloadMenu', '#sdCarEditBtn', '#sdCarEditArea',
+    'button', 'svg', 'input', 'select', 'textarea', 'form',
+    '.hidden', '[hidden]'
+  ];
+  removeSel.forEach(sel => clone.querySelectorAll(sel).forEach(el => el.remove()));
+
+  // 2) inline style display:none 인 요소도 제거 (원본 DOM 기준 가시성 판단)
+  const checkHidden = (origNode) => {
+    if (!origNode || !origNode.getBoundingClientRect) return false;
+    const style = origNode.style;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return true;
+    return false;
+  };
+  // 클론 노드와 원본 노드를 매핑하기 위해 동일 selector로 순회
+  // (간단히 — 클론 트리 직접 inline style 검사)
+  clone.querySelectorAll('*').forEach(el => {
+    const s = el.getAttribute('style') || '';
+    if (/display\s*:\s*none/i.test(s) || /visibility\s*:\s*hidden/i.test(s)) el.remove();
+  });
+
+  // canvas → img 치환 (id 기반)
+  // ★ canvas 부모는 fixed height(예: height:320px)를 가지므로
+  //   img(height:auto)로 치환 시 빈 여백 발생 → 부모 height 제거
+  clone.querySelectorAll('canvas').forEach(c => {
+    const data = canvasMap.get(c.id);
+    if (!data) { c.remove(); return; }
+    const img = document.createElement('img');
+    img.src = data;
+    // 원본 캔버스 비율 유지 — width 100% + 자연 비율 height
+    img.setAttribute('style', 'display:block;width:100%;height:auto;max-width:100%;');
+    // 부모 컨테이너 fixed height 제거 (height·min-height·max-height)
+    let p = c.parentElement;
+    for (let i = 0; i < 3 && p; i++) {
+      const s = p.getAttribute('style') || '';
+      if (/height\s*:/i.test(s)) {
+        const cleaned = s.replace(/(?:^|;)\s*(?:min-|max-)?height\s*:[^;]+/gi, '').replace(/^;+/, '');
+        p.setAttribute('style', cleaned + ';height:auto;');
+      }
+      p = p.parentElement;
+    }
+    c.replaceWith(img);
+  });
+
+  // 차트 카드 안의 빈 div(범례 컨테이너 등) 정리 — 텍스트도 자식도 없는 빈 노드 제거
+  // 두 번 돌려서 연쇄적으로 비게 된 부모도 수거
+  for (let pass = 0; pass < 2; pass++) {
+    clone.querySelectorAll('div').forEach(d => {
+      if (d.children.length === 0 && !d.textContent.trim() && !d.querySelector('img,canvas,table,svg')) {
+        d.remove();
+      }
+    });
+  }
+
+  // 모든 노드의 class·이벤트 핸들러 제거 (스타일은 후속 매핑 단계에서 부여)
+  const walk = (node) => {
+    if (node.nodeType !== 1) return;
+    const tagName = node.tagName.toLowerCase();
+    const classList = node.className && typeof node.className === 'string' ? node.className.split(/\s+/) : [];
+    const id = node.id || '';
+
+    // 의미 기반 인라인 스타일 부여
+    let styleAddon = '';
+    if (classList.includes('apple-card')) styleAddon += CARD;
+    if (id === 'sdTitle' || classList.includes('section-title')) styleAddon += TITLE;
+    if (id === 'sdSubtitle' || classList.includes('section-subtitle')) styleAddon += SUBTITLE;
+    if (tagName === 'h3' && !styleAddon) styleAddon += H3;
+    if (tagName === 'table') styleAddon += `${W760}border-collapse:collapse;font-size:13px;background:#fff;`;
+    if (tagName === 'th' || tagName === 'td') styleAddon += 'padding:8px 10px;border:1px solid #E5E7EB;text-align:left;vertical-align:top;';
+    if (tagName === 'th') styleAddon += 'background:#F7F8F9;font-weight:600;color:#303A3C;';
+
+    // 그리드 → flex-wrap (4개 카드/2x2 차트)
+    if (classList.includes('grid')) {
+      styleAddon += `display:flex;flex-wrap:wrap;gap:16px;${W760}margin:0 0 16px;`;
+      // 자식 카드는 flex-basis 설정
+      Array.from(node.children).forEach(child => {
+        const prev = child.getAttribute('style') || '';
+        child.setAttribute('style', prev + ';flex:1 1 340px;min-width:280px;max-width:380px;box-sizing:border-box;');
+      });
+    }
+
+    // 기존 inline style 보존 + 새 styleAddon 추가
+    if (styleAddon) {
+      const prev = node.getAttribute('style') || '';
+      node.setAttribute('style', prev + (prev && !prev.endsWith(';') ? ';' : '') + styleAddon);
+    }
+
+    // 정리: class·id·이벤트 핸들러 제거
+    node.removeAttribute('class');
+    node.removeAttribute('id');
+    Array.from(node.attributes).forEach(a => {
+      if (a.name.startsWith('on')) node.removeAttribute(a.name);
+    });
+
+    // 자식 walk
+    Array.from(node.children).forEach(walk);
+  };
+
+  Array.from(clone.children).forEach(walk);
+
+  // 최상위 wrapper에도 자체 너비 cap
+  const prev = clone.getAttribute('style') || '';
+  clone.setAttribute('style', prev + (prev && !prev.endsWith(';') ? ';' : '') + `${W760}font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;color:#1a1c1d;line-height:1.5;`);
+  clone.removeAttribute('class');
+  clone.removeAttribute('id');
+
+  return clone.outerHTML;
+}
+
+function downloadDetailHTML() {
+  const menu = document.getElementById('sdDownloadMenu');
+  if (menu) menu.classList.remove('open');
+  try {
+    const html = buildExportHTML();
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = getDetailFilename() + '.html';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    _sdToast('HTML 파일 다운로드 완료');
+  } catch (err) {
+    console.error(err);
+    _sdToast('HTML 생성 실패: ' + (err?.message || err), false);
+  }
+}
+
+async function copyDetailHTMLToClipboard() {
+  const menu = document.getElementById('sdDownloadMenu');
+  if (menu) menu.classList.remove('open');
+  try {
+    const html = buildExportHTML();
+    const text = (document.getElementById('sdTitle')?.textContent || '') + '\n' + (document.getElementById('sdSubtitle')?.textContent || '');
+    if (navigator.clipboard && window.ClipboardItem) {
+      const item = new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      });
+      await navigator.clipboard.write([item]);
+      _sdToast('클립보드 복사 완료 (그룹웨어에 붙여넣기)');
+    } else {
+      // fallback: contenteditable 통해 execCommand('copy')
+      const div = document.createElement('div');
+      div.contentEditable = 'true';
+      div.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+      div.innerHTML = html;
+      document.body.appendChild(div);
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      const ok = document.execCommand('copy');
+      sel.removeAllRanges(); div.remove();
+      _sdToast(ok ? '클립보드 복사 완료 (fallback)' : '클립보드 복사 실패', ok);
+    }
+  } catch (err) {
+    console.error(err);
+    _sdToast('클립보드 복사 실패: ' + (err?.message || err), false);
+  }
+}
+
 // --- History API: 브라우저 뒤로가기/앞으로가기 지원 ---
 history.replaceState({ type: 'tab', tab: 0 }, '', '');
 window.addEventListener('popstate', (e) => {
@@ -11564,15 +11908,16 @@ function renderDivBarChart(d) {
   }
   datasets.push({
     label: '금번(' + d.year + ')', data: currData,
-    backgroundColor: 'rgba(210,0,21,0.8)', borderRadius: 4, barPercentage: 0.7, order: 1,
-    datalabels: { display: true, color: '#fff', font: { size: 11, weight: '700' }, anchor: 'center', align: 'center', formatter: (v) => v ? v.toFixed(1) + '%' : '' }
+    backgroundColor: ['#D20015', '#3B82F6', '#22C55E'], borderRadius: 4, barPercentage: 0.75, categoryPercentage: 0.75, order: 1,
+    datalabels: { display: true, color: '#1a1c1d', font: { size: 14, weight: '700' }, anchor: 'end', align: 'top', offset: 2, formatter: (v) => v ? v.toFixed(1) + '%' : '' }
   });
   chartInstances['sdBarChart'] = new Chart(ctx, {
     type: 'bar', data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      scales: { y: { min: 0, max: 100, ticks: { stepSize: 20, font: { size: 11 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.3)' } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } },
-      plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } }, datalabels: { display: false } }
+      layout: { padding: { top: 18 } },
+      scales: { y: { min: 0, max: 100, ticks: { stepSize: 25, font: { size: 12 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.25)' } }, x: { grid: { display: false }, ticks: { font: { size: 12, weight: '500' }, color: '#303A3C' } } },
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 14, padding: 12 } }, datalabels: { display: false } }
     },
     plugins: [ChartDataLabels]
   });
@@ -11590,15 +11935,15 @@ function renderDivCategoryBar(d) {
       rates.push(cr.complianceRate);
     }
   }
-  const bgColors = rates.map(r => r >= 90 ? 'rgba(34,197,94,0.7)' : r >= 70 ? 'rgba(245,158,11,0.7)' : 'rgba(210,0,21,0.7)');
+  const bgColors = rates.map(r => r >= 90 ? '#22C55E' : r >= 70 ? '#F59E0B' : '#D20015');
   chartInstances['sdCarChart'] = new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: [{ label: '적합률', data: rates, backgroundColor: bgColors, borderRadius: 4, barPercentage: 0.75,
-      datalabels: { display: true, color: '#fff', font: { size: 10, weight: '700' }, anchor: 'center', align: 'center', formatter: v => v.toFixed(1) + '%' } }] },
+    data: { labels, datasets: [{ label: '적합률', data: rates, backgroundColor: bgColors, borderRadius: 3, barPercentage: 0.85, categoryPercentage: 0.7,
+      datalabels: { display: true, color: '#1a1c1d', font: { size: 12, weight: '700' }, anchor: 'end', align: 'right', offset: 4, formatter: v => v.toFixed(1) + '%' } }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      layout: { padding: { right: 10 } },
-      scales: { x: { min: 0, max: 100, ticks: { stepSize: 25, font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.3)' } }, y: { grid: { display: false }, ticks: { font: { size: 10 }, autoSkip: false } } },
+      layout: { padding: { right: 36 } },
+      scales: { x: { position: 'top', min: 0, max: 100, ticks: { stepSize: 25, font: { size: 11 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.25)' } }, y: { grid: { display: false }, ticks: { font: { size: 11, weight: '500' }, color: '#303A3C', autoSkip: false } } },
       plugins: { legend: { display: false }, datalabels: { display: false } }
     },
     plugins: [ChartDataLabels]
@@ -11612,12 +11957,13 @@ function renderDivDoughnutChart(d) {
   const counts = [d.totalS, d.totalU, d.totalNA];
   const total = d.totalS + d.totalU + d.totalNA || 1;
   chartInstances['sdDoughnutChart'] = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels: ['적합(S)', '부적합(U)', '해당없음(NA)'], datasets: [{ data: counts, backgroundColor: ['#22C55E', '#D20015', '#9EA2A1'], borderWidth: 3, borderColor: '#ffffff', hoverOffset: 12, offset: [6, 6, 6], spacing: 2 }] },
+    type: 'pie',
+    data: { labels: ['적합(S)', '부적합(U)', '해당없음(NA)'], datasets: [{ data: counts, backgroundColor: ['#22C55E', '#D20015', '#9EA2A1'], borderWidth: 2, borderColor: '#ffffff', hoverOffset: 10, offset: [4, 4, 4] }] },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: '45%',
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: 36 },
       plugins: {
-        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 12,
+        legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 14, padding: 12,
           generateLabels: (chart) => chart.data.labels.map((label, i) => {
             const val = chart.data.datasets[0].data[i];
             const pct = total > 0 ? ((val / total) * 100).toFixed(0) : 0;
@@ -11626,23 +11972,11 @@ function renderDivDoughnutChart(d) {
         }},
         datalabels: {
           display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
-          color: (ctx) => {
-            const total2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct = total2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / total2 * 100) : 0;
-            return pct < 10 ? '#303A3C' : '#fff';
-          },
-          font: { size: 11, weight: '700' },
-          anchor: (ctx) => {
-            const total2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct = total2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / total2 * 100) : 0;
-            return pct < 10 ? 'end' : 'center';
-          },
-          align: (ctx) => {
-            const total2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct = total2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / total2 * 100) : 0;
-            return pct < 10 ? 'end' : 'center';
-          },
-          offset: 4,
+          color: '#1a1c1d',
+          font: { size: 12, weight: '700' },
+          anchor: 'end',
+          align: 'end',
+          offset: 8,
           formatter: (value) => { const pct = ((value / total) * 100).toFixed(0); return value + '건, ' + pct + '%'; }
         }
       }
@@ -11665,8 +11999,9 @@ function renderDivRadarChart(d) {
   });
   const datasets = [{
     label: '금번(' + d.year + ')', data: currData,
-    backgroundColor: 'rgba(210,0,21,0.12)', borderColor: '#D20015',
-    pointBackgroundColor: '#D20015', pointRadius: 4, borderWidth: 2, fill: true
+    backgroundColor: 'rgba(59,130,246,0.10)', borderColor: '#3B82F6',
+    pointBackgroundColor: '#3B82F6', pointBorderColor: '#fff', pointBorderWidth: 1, pointRadius: 5, borderWidth: 2.5, fill: true,
+    datalabels: { display: true, color: '#1a1c1d', font: { size: 13, weight: '700' }, anchor: 'end', align: 'start', offset: 8, formatter: (v) => v ? v.toFixed(0) + '%' : '' }
   }];
   let prevData = [];
   if (hasPrev) {
@@ -11677,21 +12012,22 @@ function renderDivRadarChart(d) {
     });
     datasets.push({
       label: '직전(' + d.prevYear + ')', data: prevData,
-      backgroundColor: 'rgba(86,90,91,0.08)', borderColor: '#9EA2A1',
-      pointBackgroundColor: '#9EA2A1', pointRadius: 3, borderWidth: 1.5, fill: true, borderDash: [4, 4]
+      backgroundColor: 'rgba(86,90,91,0.06)', borderColor: '#9EA2A1',
+      pointBackgroundColor: '#9EA2A1', pointRadius: 3, borderWidth: 1.5, fill: true, borderDash: [4, 4],
+      datalabels: { display: false }
     });
   }
   chartInstances['sdRadarChart'] = new Chart(ctx, {
     type: 'radar', data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      layout: { padding: { top: 20, bottom: 10, left: 20, right: 20 } },
-      scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent', font: { size: 8 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.4)' }, pointLabels: { font: { size: 10, weight: '600' }, color: '#303A3C', padding: 12 } } },
+      layout: { padding: { top: 20, bottom: 10, left: 30, right: 30 } },
+      scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent', font: { size: 10 }, color: '#9EA2A1', callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.4)' }, angleLines: { color: 'rgba(192,206,209,0.4)' }, pointLabels: { font: { size: 12, weight: '600' }, color: '#303A3C', padding: 14 } } },
       plugins: {
-        legend: { display: false },
-        datalabels: false
+        legend: { display: false }
       }
-    }
+    },
+    plugins: [ChartDataLabels]
   });
   // HTML 범례: 지점 스타일 (색상 도트 + 테이블)
   const legendEl = document.getElementById('sdRadarLegend');
@@ -11832,22 +12168,23 @@ function renderSDBarChart(d) {
       d.paxResult ? +d.paxResult.overallAverage.toFixed(2) : 0,
       d.rampResult ? +d.rampResult.overallAverage.toFixed(2) : 0
     ],
-    backgroundColor: 'rgba(210,0,21,0.8)',
-    borderRadius: 4, barPercentage: 0.7,
+    backgroundColor: ['#D20015', '#3B82F6', '#22C55E', '#F59E0B'],
+    borderRadius: 4, barPercentage: 0.75, categoryPercentage: 0.75,
     order: 1,
-    datalabels: { display: true, color: '#fff', font: { size: 11, weight: '700' }, anchor: 'center', align: 'center', formatter: (v) => v ? v.toFixed(2) : '' }
+    datalabels: { display: true, color: '#1a1c1d', font: { size: 14, weight: '700' }, anchor: 'end', align: 'top', offset: 2, formatter: (v) => v ? v.toFixed(2) : '' }
   });
   chartInstances['sdBarChart'] = new Chart(ctx, {
     type: 'bar',
     data: { labels: ['총 평균', '항공사', '여객 협력사', '램프 협력사'], datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 18 } },
       scales: {
-        y: { min: 0, max: 4, ticks: { stepSize: 0.5, font: { size: 11 } }, grid: { color: 'rgba(192,206,209,0.3)' } },
-        x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+        y: { min: 0, max: 4, ticks: { stepSize: 1, font: { size: 12 } }, grid: { color: 'rgba(192,206,209,0.25)' } },
+        x: { grid: { display: false }, ticks: { font: { size: 12, weight: '500' }, color: '#303A3C' } }
       },
       plugins: {
-        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } },
+        legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 14, padding: 12 } },
         tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw?.toFixed(2) || '-'}` } },
         datalabels: { display: false }
       }
@@ -11868,21 +12205,22 @@ function renderSDCarChart(carData) {
     data: {
       labels: CAR_CATEGORIES,
       datasets: [
-        { label: '금번심사', data: currData, backgroundColor: 'rgba(210,0,21,0.8)', borderRadius: 4, barPercentage: 0.7,
-          datalabels: { display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0, color: '#fff', font: { size: 10, weight: '700' }, anchor: 'center', align: 'center', formatter: (v) => v + '건' } },
-        { label: '직전심사', data: prevData, backgroundColor: 'rgba(86,90,91,0.5)', borderRadius: 4, barPercentage: 0.7,
-          datalabels: { display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0, color: '#fff', font: { size: 10, weight: '600' }, anchor: 'center', align: 'center', formatter: (v) => v + '건' } }
+        { label: '금번심사', data: currData, backgroundColor: '#D20015', borderRadius: 3, barPercentage: 0.85, categoryPercentage: 0.7,
+          datalabels: { display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0, color: '#1a1c1d', font: { size: 12, weight: '700' }, anchor: 'end', align: 'right', offset: 4, formatter: (v) => v + '건' } },
+        { label: '직전심사', data: prevData, backgroundColor: '#3B82F6', borderRadius: 3, barPercentage: 0.85, categoryPercentage: 0.7,
+          datalabels: { display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0, color: '#1a1c1d', font: { size: 11, weight: '600' }, anchor: 'end', align: 'right', offset: 4, formatter: (v) => v + '건' } }
       ]
     },
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 30 } },
       scales: {
-        x: { beginAtZero: true, max: maxVal + 1, ticks: { stepSize: 1, font: { size: 10 } }, grid: { color: 'rgba(192,206,209,0.3)' } },
-        y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+        x: { position: 'top', beginAtZero: true, max: maxVal + 1, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: 'rgba(192,206,209,0.25)' } },
+        y: { grid: { display: false }, ticks: { font: { size: 11, weight: '500' }, color: '#303A3C', autoSkip: false } }
       },
       plugins: {
-        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } },
+        legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 14, padding: 12 } },
         datalabels: { display: false }
       }
     },
@@ -11898,14 +12236,16 @@ function renderSDRadarChart(d) {
   const hasPrev = d.prevYear !== null;
   const datasets = [{
     label: `금번 심사(${d.year})`, data: d.radarCurrent.map(v => +v.toFixed(2)),
-    backgroundColor: 'rgba(210,0,21,0.12)', borderColor: '#D20015',
-    pointBackgroundColor: '#D20015', pointRadius: 4, borderWidth: 2, fill: true
+    backgroundColor: 'rgba(59,130,246,0.10)', borderColor: '#3B82F6',
+    pointBackgroundColor: '#3B82F6', pointBorderColor: '#fff', pointBorderWidth: 1, pointRadius: 5, borderWidth: 2.5, fill: true,
+    datalabels: { display: true, color: '#1a1c1d', font: { size: 13, weight: '700' }, anchor: 'end', align: 'start', offset: 8, formatter: (v) => v ? v.toFixed(2) : '' }
   }];
   if (hasPrev) {
     datasets.push({
       label: `직전 심사(${d.prevYear})`, data: d.radarPrev.map(v => +v.toFixed(2)),
-      backgroundColor: 'rgba(86,90,91,0.08)', borderColor: '#9EA2A1',
-      pointBackgroundColor: '#9EA2A1', pointRadius: 3, borderWidth: 1.5, fill: true, borderDash: [4, 4]
+      backgroundColor: 'rgba(86,90,91,0.06)', borderColor: '#9EA2A1',
+      pointBackgroundColor: '#9EA2A1', pointRadius: 3, borderWidth: 1.5, fill: true, borderDash: [4, 4],
+      datalabels: { display: false }
     });
   }
   chartInstances['sdRadarChart'] = new Chart(ctx, {
@@ -11913,16 +12253,18 @@ function renderSDRadarChart(d) {
     data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 20, bottom: 10, left: 30, right: 30 } },
       scales: {
-        r: { min: 0, max: 4, ticks: { stepSize: 1, backdropColor: 'transparent', font: { size: 9 } },
-          grid: { color: 'rgba(192,206,209,0.4)' }, pointLabels: { font: { size: 10, weight: '600' }, color: '#303A3C', padding: 6 } }
+        r: { min: 0, max: 4, ticks: { stepSize: 1, backdropColor: 'transparent', font: { size: 10 }, color: '#9EA2A1' },
+          grid: { color: 'rgba(192,206,209,0.4)' }, angleLines: { color: 'rgba(192,206,209,0.4)' },
+          pointLabels: { font: { size: 12, weight: '600' }, color: '#303A3C', padding: 14 } }
       },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw?.toFixed(2) || '-'}` } },
-        datalabels: false
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw?.toFixed(2) || '-'}` } }
       }
-    }
+    },
+    plugins: [ChartDataLabels]
   });
   // HTML 범례: 항목명(검정) | 금번(빨강) | 직전(회색)
   const legendEl = document.getElementById('sdRadarLegend');
@@ -11953,52 +12295,31 @@ function renderSDDoughnutChart(d) {
   const counts = [d.gradeCounts[1], d.gradeCounts[2], d.gradeCounts[3], d.gradeCounts[4]];
   const total = d.gradeTotal || 1;
   chartInstances['sdDoughnutChart'] = new Chart(ctx, {
-    type: 'doughnut',
+    type: 'pie',
     data: {
       labels: ['1단계', '2단계', '3단계', '4단계'],
       datasets: [{
         data: counts,
-        backgroundColor: ['#D20015', '#F59E0B', '#22C55E', '#3B82F6'],
-        borderWidth: 3,
+        backgroundColor: ['#3B82F6', '#F59E0B', '#22C55E', '#FACC15'],
+        borderWidth: 2,
         borderColor: '#ffffff',
-        hoverOffset: 12,
-        offset: [6, 6, 6, 6],
-        spacing: 2
+        hoverOffset: 10,
+        offset: [4, 4, 4, 4]
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: '45%',
-      layout: { padding: 40 },
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: 36 },
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: ctx => { const pct = total > 0 ? ((ctx.raw / total) * 100).toFixed(1) : 0; return `${ctx.label}: ${ctx.raw}건 (${pct}%)`; } } },
         datalabels: {
           display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
-          color: (ctx) => {
-            const t2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct2 = t2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / t2 * 100) : 0;
-            return pct2 < 10 ? '#303A3C' : '#fff';
-          },
-          font: (ctx) => {
-            const t2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct2 = t2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / t2 * 100) : 0;
-            return { size: pct2 < 10 ? 10 : 11, weight: '700' };
-          },
-          anchor: (ctx) => {
-            const t2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct2 = t2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / t2 * 100) : 0;
-            return pct2 < 10 ? 'end' : 'center';
-          },
-          align: (ctx) => {
-            const t2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct2 = t2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / t2 * 100) : 0;
-            return pct2 < 10 ? 'end' : 'center';
-          },
-          offset: (ctx) => {
-            const t2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct2 = t2 > 0 ? (ctx.dataset.data[ctx.dataIndex] / t2 * 100) : 0;
-            return pct2 < 10 ? 20 : 0;
-          },
+          color: '#1a1c1d',
+          font: { size: 12, weight: '700' },
+          anchor: 'end',
+          align: 'end',
+          offset: 8,
           formatter: (value, ctx) => {
             const t2 = ctx.dataset.data.reduce((a, b) => a + b, 0);
             if (t2 === 0) return '';
@@ -12013,7 +12334,7 @@ function renderSDDoughnutChart(d) {
   // HTML 범례: 색상 칩 + 항목명(검정) + 건수/%(빨강)
   const dLegendEl = document.getElementById('sdDoughnutLegend');
   if (dLegendEl) {
-    const colors = ['#D20015', '#F59E0B', '#22C55E', '#3B82F6'];
+    const colors = ['#3B82F6', '#F59E0B', '#22C55E', '#FACC15'];
     const names = ['1단계', '2단계', '3단계', '4단계'];
     let dl = '<div style="display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:center;">';
     names.forEach((n, i) => {
@@ -12162,6 +12483,8 @@ Object.assign(window, {
   // Station Detail
   openStationDetail, closeStationDetail, stationLink, renderDivisionDetail, gatherDivisionData,
   toggleCarEdit, saveCarInputs, loadCarDataFromFirebase,
+  // Detail page download (v19.8.0)
+  toggleSdDownloadMenu, downloadDetailPDF, downloadDetailHTML, copyDetailHTMLToClipboard,
   // Scoring/Utils (for dynamic HTML)
   getTypeLabel, getChecklistName, avgColor, avgBadgeStyle,
   getScheduleStatusLabels, getScheduleStatusBadgeStyle,
