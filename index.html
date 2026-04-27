@@ -938,17 +938,16 @@ select.apple-input {
         </div>
         <input id="inputAuditor" type="hidden" value="">
       </div>
-      <button onclick="inputShowTypes()" class="pill-btn pill-btn-primary">점검표 작성</button>
-    </div>
-
-    <!-- Phase 3: Type Selection -->
-    <div id="inputPhase3" class="hidden">
+      <!-- v19.10.0: 점검표 유형 선택 인라인 통합 (Phase 2 + Phase 3 병합) -->
       <div class="mb-4">
         <h3 style="font-size:17px;font-weight:600;color:#303A3C;">점검표 유형 선택</h3>
         <p class="section-subtitle mt-1" id="phase3Subtitle"></p>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="typeSelectCards"></div>
     </div>
+
+    <!-- Phase 3 (deprecated, v19.10.0 부터 Phase 2 인라인 통합) -->
+    <div id="inputPhase3" class="hidden"></div>
 
     <!-- Phase 4: Checklist -->
     <div id="inputPhase4" class="hidden">
@@ -1439,7 +1438,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.9.11</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.10.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1584,7 +1583,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.9.11',
+  version: '19.10.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -4246,11 +4245,14 @@ function inputGoBack() {
     unsavedChanges = false;
   }
   if (inputPhase > 1) {
-    if (inputPhase === 3) {
-      // Phase 3 → 2: refresh status cards
+    // v19.10.0: Phase 3 제거 (Phase 2에 인라인 통합) — 4 → 2 직행
+    let target = inputPhase - 1;
+    if (inputPhase === 4) target = 2;
+    if (target === 2) {
       renderTypeStatusCards();
+      inputShowTypes();
     }
-    setInputPhase(inputPhase - 1);
+    setInputPhase(target);
   }
 }
 
@@ -4345,6 +4347,8 @@ function inputSearch() {
   renderTypeStatusCards();
   renderAuditorPicker('auditorPickerArea', document.getElementById('inputAuditor').value);
   setInputPhase(2);
+  // v19.10.0: Phase 2 진입 시 점검표 유형 카드도 즉시 렌더 (인라인)
+  inputShowTypes();
 }
 
 function renderTypeStatusCards() {
@@ -4456,7 +4460,7 @@ function inputShowTypes() {
     html += `</div>`;
   });
   document.getElementById('typeSelectCards').innerHTML = html;
-  setInputPhase(3);
+  // v19.10.0: Phase 3 → Phase 2 인라인 통합 (단계 전환 제거)
 }
 
 function selectChecklistType(type) {
@@ -6098,6 +6102,8 @@ function navigateToInput(year, station, type) {
   renderAuditorPicker('auditorPickerArea', document.getElementById('inputAuditor').value);
   switchTab(1);
   setInputPhase(2);
+  // v19.10.0: Phase 2 진입 시 점검표 유형 카드도 즉시 렌더 (인라인)
+  inputShowTypes();
 }
 
 // ============================================================================
