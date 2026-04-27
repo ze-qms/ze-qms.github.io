@@ -1438,7 +1438,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.10.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.10.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1583,7 +1583,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.10.0',
+  version: '19.10.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -10552,7 +10552,10 @@ function renderHomeGreeting(currentYear, completedCount, totalCount) {
     if (upcoming.length > 0) {
       const sorted = upcoming.filter(s => s.dateStart).sort((a,b) => new Date(a.dateStart) - new Date(b.dateStart));
       if (sorted.length > 0) {
-        const diff = Math.ceil((new Date(sorted[0].dateStart) - today) / (1000*60*60*24));
+        // v19.10.1: 카드 D-day와 정합성 (자정 정규화 — UTC 시차로 인한 +1일 오차 수정)
+        const nextStart = new Date(sorted[0].dateStart);
+        nextStart.setHours(0,0,0,0);
+        const diff = Math.round((nextStart - today) / (1000*60*60*24));
         nextDday = diff === 0 ? '오늘 심사' : diff > 0 ? 'D-' + diff : 'D+' + Math.abs(diff);
         summaryText = '다음 심사 ' + nextDday + ' \u00b7 ';
       }
