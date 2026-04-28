@@ -407,6 +407,11 @@ select.apple-input {
   .mobile-tabs { display: flex; }
   .section-title { font-size: 22px !important; }
 
+  /* v19.11.2: 모바일에서 Phase 4 사이드 패널 강제 숨김 + 본문 단일 컬럼 */
+  #memoSidePanel { display: none !important; }
+  #phase4Body { flex-direction: column !important; gap: 0 !important; }
+  #phase4Body > #checklistArea { width: 100% !important; min-width: 0 !important; }
+
   /* Mobile table optimization - 가독성 우선 */
   .apple-table { font-size: 13px; }
   .apple-table thead th { font-size: 11px; padding: 10px 8px; white-space: nowrap; }
@@ -628,7 +633,8 @@ select.apple-input {
 /* v19.9.9: scale → box-shadow 로 변경 (세로 overflow 방지) */
 @keyframes ddayPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(210,0,21,0); } 50% { box-shadow: 0 0 0 4px rgba(210,0,21,0.18); } }
 .dday-pulse { animation: ddayPulse 1.5s ease-in-out infinite; }
-.dday-card { border-radius: 16px; padding: 16px; min-width: 140px; min-height: 180px; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; display: flex; flex-direction: column; }
+/* v19.11.7: 카드 자체 클릭은 없지만 hover 애니메이션은 복원 (시각적 피드백만) */
+.dday-card { border-radius: 16px; padding: 16px; min-width: 140px; min-height: 180px; cursor: default; transition: transform 0.15s ease, box-shadow 0.15s ease; display: flex; flex-direction: column; position: relative; }
 .dday-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1) !important; }
 /* v19.9.11: 홈 다가오는 심사 — 완료/다가오는 카드 너비·높이 완전 일치 (고정 height) */
 .home-dday-completed-col { width: 150px !important; }
@@ -826,6 +832,7 @@ select.apple-input {
     <button onclick="switchTab(1)" class="desktop-tab px-5 py-2.5 whitespace-nowrap tab-inactive" data-tab="1" data-tab-alt="2" style="font-size:13px;font-weight:400;letter-spacing:-0.224px;background:none;border:none;cursor:pointer;">점검</button>
     <button onclick="switchTab(3)" class="desktop-tab px-5 py-2.5 whitespace-nowrap tab-inactive" data-tab="3" data-tab-alt="4" style="font-size:13px;font-weight:400;letter-spacing:-0.224px;background:none;border:none;cursor:pointer;">인사이트</button>
     <button onclick="switchTab(5)" class="desktop-tab px-5 py-2.5 whitespace-nowrap tab-inactive" data-tab="5" style="font-size:13px;font-weight:400;letter-spacing:-0.224px;background:none;border:none;cursor:pointer;">일정</button>
+    <button onclick="switchTab(7)" class="desktop-tab px-5 py-2.5 whitespace-nowrap tab-inactive" data-tab="7" style="font-size:13px;font-weight:400;letter-spacing:-0.224px;background:none;border:none;cursor:pointer;">메모</button>
     <button onclick="switchTab(6)" class="desktop-tab px-5 py-2.5 whitespace-nowrap tab-inactive" data-tab="6" style="font-size:13px;font-weight:400;letter-spacing:-0.224px;background:none;border:none;cursor:pointer;">관리</button>
   </div>
 </nav>
@@ -943,7 +950,11 @@ select.apple-input {
         <h3 style="font-size:17px;font-weight:600;color:#303A3C;">점검표 유형 선택</h3>
         <p class="section-subtitle mt-1" id="phase3Subtitle"></p>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="typeSelectCards"></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" id="typeSelectCards"></div>
+      <!-- v19.11.1: Phase 2 하단 메모/체크리스트 섹션 -->
+      <div class="apple-card p-1" style="margin-top:16px;">
+        <div id="phase2MemoArea"></div>
+      </div>
     </div>
 
     <!-- Phase 3 (deprecated, v19.10.0 부터 Phase 2 인라인 통합) -->
@@ -956,14 +967,21 @@ select.apple-input {
       <span id="progressFill" style="display:none;"></span>
       <span id="progressPercent" style="display:none;"></span>
       <div class="mb-4">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           <span id="phase4TypeBadge" class="badge-pill" style="background:#D20015;color:#fff;font-size:13px;padding:4px 14px;"></span>
           <span id="phase4MaturityToggle" style="font-size:12px;color:#6E7273;cursor:pointer;display:none;" onclick="document.getElementById('maturityHeaderPanel').classList.toggle('hidden')">▶ 성숙도 기준 보기</span>
+          <!-- v19.11.0: 사전 체크 미완료 배지 + 메모 패널 토글 -->
+          <span id="memoChecklistBadge" onclick="openMemoPanel('checklist')" class="badge-pill" style="display:none;cursor:pointer;font-size:12px;padding:4px 12px;font-weight:600;"></span>
+          <button id="memoPanelToggleDesktop" onclick="toggleMemoPanel()" class="hidden md:inline-flex" style="background:rgba(0,103,196,0.1);color:#0067C4;border:none;border-radius:980px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;align-items:center;gap:4px;">📋 메모/체크리스트</button>
         </div>
         <div id="phase4CompanyInfo" style="font-size:14px;color:#565A5B;margin-top:4px;"></div>
         <div id="maturityHeaderPanel" class="hidden" style="margin-top:8px;padding:16px;background:#f9f9fb;border-radius:12px;font-size:13px;color:#565A5B;"></div>
       </div>
-      <div id="checklistArea"></div>
+      <div id="phase4Body" style="display:flex;gap:16px;align-items:flex-start;">
+        <div id="checklistArea" style="flex:1;min-width:0;"></div>
+        <!-- v19.11.0: 데스크톱 사이드 패널 -->
+        <aside id="memoSidePanel" class="hidden md:block" style="width:360px;flex-shrink:0;position:sticky;top:80px;max-height:calc(100vh - 100px);overflow-y:auto;"></aside>
+      </div>
     </div>
 
     <!-- Sticky Bottom Bar - Glass -->
@@ -1230,6 +1248,15 @@ select.apple-input {
     <div id="scheduleContainer"></div>
   </div>
 
+  <!-- Tab 7: Memo Workspace (v19.11.0) -->
+  <div id="tab7" class="tab-content hidden fade-in">
+    <div class="mb-6">
+      <h2 class="section-title">메모</h2>
+      <p class="section-subtitle mt-1">심사 전·중·후 자유 메모와 사전 체크리스트를 작성합니다</p>
+    </div>
+    <div id="memoWorkspaceArea"></div>
+  </div>
+
   <!-- Tab 6: Data Management -->
   <div id="tab6" class="tab-content hidden fade-in">
     <div class="mb-6">
@@ -1438,7 +1465,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.10.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.8</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1546,9 +1573,25 @@ select.apple-input {
       <h3 id="sdCategoryTitle" style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:16px;">분야별 성숙도 평점</h3>
       <div class="overflow-x-auto" id="sdCategoryTable"></div>
     </div>
+
+    <!-- v19.11.1: Station Detail 메모 카드 제거 — Phase 2 하단으로 이동 -->
   </div>
 
 </main>
+
+<!-- v19.11.0: Phase 4 모바일 FAB + 바텀시트 -->
+<button id="memoFab" onclick="openMemoPanel()" class="md:hidden" style="display:none;position:fixed;right:14px;bottom:96px;width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0067C4 0%,#0050a0 100%);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,103,196,0.4);font-size:18px;cursor:pointer;z-index:45;align-items:center;justify-content:center;">
+  📋
+  <span id="memoFabBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#D20015;color:#fff;border-radius:980px;font-size:11px;font-weight:700;min-width:20px;height:20px;padding:0 6px;line-height:20px;border:2px solid #fff;"></span>
+</button>
+<div id="memoBottomSheetOverlay" onclick="closeMemoPanel()" class="hidden md:hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:48;"></div>
+<div id="memoBottomSheet" class="hidden md:hidden" style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:20px 20px 0 0;z-index:49;max-height:80vh;overflow-y:auto;padding:14px 16px calc(16px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px rgba(0,0,0,0.15);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <div style="font-size:15px;font-weight:700;color:#303A3C;">메모 / 체크리스트</div>
+    <button onclick="closeMemoPanel()" style="background:none;border:none;font-size:22px;color:#9EA2A1;cursor:pointer;padding:4px 8px;">×</button>
+  </div>
+  <div id="memoBottomSheetBody"></div>
+</div>
 
 <!-- Mobile Bottom Tab Bar - Glass (5탭: 홈/입력/조회/인사이트/일정) -->
 <nav class="mobile-tabs fixed bottom-0 left-0 right-0 glass-bottom z-50 md:hidden flex justify-around" id="mobileTabBar" style="height:auto;min-height:56px;padding:4px 0 calc(8px + env(safe-area-inset-bottom));">
@@ -1568,6 +1611,11 @@ select.apple-input {
     <svg class="w-5 h-5" style="color:#9EA2A1;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
     <span style="font-size:11px;margin-top:2px;color:#9EA2A1;letter-spacing:-0.224px;">일정</span>
   </button>
+  <!-- v19.11.0: 메모 탭 -->
+  <button onclick="switchTab(7)" class="mobile-tab flex flex-col items-center justify-center py-1 px-2 min-w-0 flex-1" data-tab="7" style="background:none;border:none;cursor:pointer;min-height:44px;">
+    <svg class="w-5 h-5" style="color:#9EA2A1;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9h6m-6 4h4"/></svg>
+    <span style="font-size:11px;margin-top:2px;color:#9EA2A1;letter-spacing:-0.224px;">메모</span>
+  </button>
 </nav>
 
 <!-- Footer (desktop) -->
@@ -1583,7 +1631,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.10.1',
+  version: '19.11.8',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -2925,6 +2973,8 @@ function scheduleGoBack() {
 
 const CUSTOM_STATIONS_KEY = 'eastar_' + APP_ENV + '_custom_stations';
 const CAR_STORAGE_KEY = 'eastar_' + APP_ENV + '_car_data';
+// v19.11.0: 심사 메모(Audit Memo) 저장소 — { [year_station]: { [memoId]: memo } }
+const MEMO_STORAGE_KEY = 'eastar_' + APP_ENV + '_memos';
 
 // Station Detail state
 let stationDetailPreviousTab = 0;
@@ -4152,6 +4202,7 @@ function switchTab(idx, _fromPopstate) {
   if (idx === 4) renderAnalysis();
   if (idx === 5) { schedulePhase = 1; currentScheduleId = null; renderSchedule(); } // reset without history push (switchTab already records)
   if (idx === 6) renderDataManagement();
+  if (idx === 7) renderMemoWorkspace(); // v19.11.0
   // v18.0.0: 세그먼트 업데이트
   updateCheckSegment(idx);
   updateInsightSegment(idx);
@@ -4235,6 +4286,8 @@ function setInputPhase(phase) {
     document.getElementById('checklistArea').innerHTML = '';
     currentChecklist = null;
   }
+  // v19.11.0: 메모 패널 가시성 갱신
+  if (typeof showMemoPanelControls === 'function') showMemoPanelControls();
   // 단계 전환 시 상단으로 스크롤
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -4517,12 +4570,14 @@ function renderChecklistItems(items, scores, remarks, type, options) {
     const selected = scores[item.id];
     const remarkVal = remarks[item.id] || '';
 
-    html += `<div style="padding:12px 20px;border-bottom:1px solid rgba(192,206,209,0.3);">`;
+    html += `<div style="padding:16px 20px;border-bottom:1px solid rgba(192,206,209,0.3);">`;
     // PC: inline row / Mobile: stack
     html += `<div class="checklist-item-row">`;
     html += `<div class="item-text-area flex items-start gap-3">`;
-    html += `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:24px;border-radius:6px;background:#303A3C;color:#fff;font-size:11px;font-weight:600;letter-spacing:-0.224px;flex-shrink:0;margin-top:2px;">${item.id}</span>`;
-    html += `<span style="font-size:14px;color:#303A3C;font-weight:400;letter-spacing:-0.374px;line-height:1.47;">${item.text}</span>`;
+    // v19.11.3: 항목 ID 라벨 폰트·크기 키움
+    html += `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:28px;border-radius:8px;background:#303A3C;color:#fff;font-size:13px;font-weight:700;letter-spacing:-0.224px;flex-shrink:0;margin-top:2px;">${item.id}</span>`;
+    // v19.11.3: 본문 14→16px, line-height 1.55
+    html += `<span style="font-size:16px;color:#1a1c1d;font-weight:400;letter-spacing:-0.3px;line-height:1.55;">${item.text}</span>`;
     html += `</div>`;
 
     html += `<div class="item-score-area">`;
@@ -4556,12 +4611,13 @@ function renderChecklistItems(items, scores, remarks, type, options) {
 
     // Maturity criteria (grade checklists with item.maturity)
     if (!isBinary && item.maturity) {
-      html += `<details style="margin-left:44px;margin-top:4px;">`;
-      html += `<summary style="font-size:12px;color:#6366F1;cursor:pointer;">성숙도 기준</summary>`;
-      html += `<div style="font-size:12px;color:#565A5B;padding:8px 12px;background:rgba(99,102,241,0.06);border-radius:8px;margin-top:4px;">`;
+      // v19.11.3: 폰트 키움 12→13px
+      html += `<details style="margin-left:50px;margin-top:8px;">`;
+      html += `<summary style="font-size:13px;color:#6366F1;cursor:pointer;font-weight:500;">성숙도 기준</summary>`;
+      html += `<div style="font-size:13px;color:#565A5B;padding:10px 14px;background:rgba(99,102,241,0.06);border-radius:10px;margin-top:6px;line-height:1.6;">`;
       for (const lvl of [1, 2, 3, 4]) {
         if (item.maturity[lvl]) {
-          html += `<div style="margin-bottom:4px;"><span style="color:${SCORE_COLORS[lvl]};font-weight:600;">${lvl}점</span> ${item.maturity[lvl]}</div>`;
+          html += `<div style="margin-bottom:6px;"><span style="color:${SCORE_COLORS[lvl]};font-weight:700;">${lvl}점</span> ${item.maturity[lvl]}</div>`;
         }
       }
       html += `</div></details>`;
@@ -4570,23 +4626,25 @@ function renderChecklistItems(items, scores, remarks, type, options) {
     // Verification & manual (ALL checklist types)
     if (item.verification || item.manual) {
       if (item.verification) {
-        html += `<details style="margin-left:44px;margin-top:2px;"><summary style="font-size:12px;color:#9EA2A1;cursor:pointer;">확인내용 보기</summary><div style="font-size:12px;color:#565A5B;padding:8px 12px;background:rgba(192,206,209,0.15);border-radius:8px;margin-top:4px;white-space:pre-line;">${item.verification}</div></details>`;
+        // v19.11.3: 12→13px
+        html += `<details style="margin-left:50px;margin-top:6px;"><summary style="font-size:13px;color:#9EA2A1;cursor:pointer;font-weight:500;">확인내용 보기</summary><div style="font-size:13px;color:#565A5B;padding:10px 14px;background:rgba(192,206,209,0.15);border-radius:10px;margin-top:6px;white-space:pre-line;line-height:1.6;">${item.verification}</div></details>`;
       }
       if (item.manual) {
-        html += `<div style="margin-left:44px;font-size:11px;color:#987B37;margin-top:2px;">${item.manual}</div>`;
+        // v19.11.3: 11→12px
+        html += `<div style="margin-left:50px;font-size:12px;color:#987B37;margin-top:4px;">${item.manual}</div>`;
       }
     }
 
     // Collapsible remarks
     if (remarkVal) {
-      html += `<div class="remark-input-wrap" style="margin-left:44px;">`;
-      html += `<input type="text" placeholder="비고 / 의견" value="${remarkVal.replace(/"/g, '&quot;')}" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)">`;
+      html += `<div class="remark-input-wrap" style="margin-left:50px;margin-top:8px;">`;
+      html += `<input type="text" placeholder="비고 / 의견" value="${remarkVal.replace(/"/g, '&quot;')}" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)" style="font-size:14px;padding:10px 14px;">`;
       html += `</div>`;
     } else {
-      html += `<div style="margin-left:44px;margin-top:2px;">`;
-      html += `<span class="remark-toggle" onclick="${sp}this.style.display='none';this.nextElementSibling.style.display='block';">+ 비고</span>`;
+      html += `<div style="margin-left:50px;margin-top:6px;">`;
+      html += `<span class="remark-toggle" style="font-size:13px;" onclick="${sp}this.style.display='none';this.nextElementSibling.style.display='block';">+ 비고</span>`;
       html += `<div class="remark-input-wrap" style="display:none;">`;
-      html += `<input type="text" placeholder="비고 / 의견" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)">`;
+      html += `<input type="text" placeholder="비고 / 의견" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)" style="font-size:14px;padding:10px 14px;">`;
       html += `</div></div>`;
     }
     html += `</div>`;
@@ -9946,6 +10004,38 @@ function setupFirebaseListeners() {
     }
   });
 
+  // v19.11.0: Memo 실시간 동기화 — { year: { stationKey: { memoId: memo } } }
+  dbRef('memos').on('value', (snapshot) => {
+    const data = snapshot.val();
+    const local = SafeStorage.get(MEMO_STORAGE_KEY, {});
+    const newLocal = {};
+    if (data) {
+      for (const [yr, byStation] of Object.entries(data)) {
+        for (const [stKey, byId] of Object.entries(byStation || {})) {
+          // station 원본명은 메모 객체에 저장돼 있음 (안전키 역변환 불필요)
+          for (const memo of Object.values(byId || {})) {
+            if (!memo || !memo.year || !memo.station || !memo.id) continue;
+            const key = memo.year + '_' + memo.station;
+            if (!newLocal[key]) newLocal[key] = {};
+            // items가 배열이 아닌 sparse 객체로 들어올 수 있음 — 정규화
+            if (memo.type === 'checklist' && memo.items && !Array.isArray(memo.items)) {
+              memo.items = Object.keys(memo.items).sort((a,b)=>+a-+b).map(k => memo.items[k]);
+            }
+            newLocal[key][memo.id] = memo;
+          }
+        }
+      }
+    }
+    if (JSON.stringify(local) !== JSON.stringify(newLocal)) {
+      SafeStorage.set(MEMO_STORAGE_KEY, newLocal);
+      // 활성 화면 갱신
+      try {
+        if (typeof renderMemoWorkspace === 'function' && activeTab === 7) renderMemoWorkspace();
+        if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 4 || inputPhase === 2)) renderMemoSidePanel();
+      } catch(e) {}
+    }
+  });
+
   // Listen for custom stations — Firebase 우선
   dbRef('customStations').on('value', (snapshot) => {
     const data = snapshot.val();
@@ -10195,7 +10285,7 @@ async function copyEnvData() {
 
   showLoading('환경 간 데이터 복사 중...');
   try {
-    const collections = ['assessments', 'auditors', 'schedule', 'customStations', 'users'];
+    const collections = ['assessments', 'auditors', 'schedule', 'customStations', 'users', 'car', 'memos'];
     const migrationData = {};
     let count = 0;
     for (const col of collections) {
@@ -10567,10 +10657,19 @@ function renderHomeGreeting(currentYear, completedCount, totalCount) {
     summaryText = '올해 배정된 심사 일정이 없습니다';
   }
 
-  el.innerHTML = '<div style="padding:20px 24px;background:linear-gradient(135deg,#303A3C 0%,#1a2122 100%);border-radius:16px;color:#fff;">' +
-    '<div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;">' + greeting + ', ' + (userName || '사용자') + '님</div>' +
-    '<div style="font-size:13px;color:rgba(255,255,255,0.6);font-weight:400;">' + summaryText + '</div>' +
+  el.innerHTML = '<div style="padding:20px 24px;background:linear-gradient(135deg,#303A3C 0%,#1a2122 100%);border-radius:16px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">' +
+    '<div style="flex:1;min-width:220px;">' +
+      '<div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;">' + greeting + ', ' + (userName || '사용자') + '님</div>' +
+      '<div style="font-size:13px;color:rgba(255,255,255,0.6);font-weight:400;">' + summaryText + '</div>' +
+    '</div>' +
+    // v19.11.3: 메모 빠른 진입점 — 더 명시적, switchTab 직접 호출로 견고화
+    '<button onclick="window.switchTab && window.switchTab(7);" style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.28);border-radius:980px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex-shrink:0;letter-spacing:-0.2px;transition:all 0.15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.28)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.18)\'">📋 메모 작성</button>' +
     '</div>';
+}
+function onHomeMemoQuickAdd() {
+  // 메모 작업창으로 이동 + 작성 폼 초기화
+  if (typeof onMemoDraftReset === 'function') onMemoDraftReset();
+  switchTab(7);
 }
 
 function renderHomeMySchedule(currentYear) {
@@ -10632,18 +10731,25 @@ function renderHomeMySchedule(currentYear) {
     } else { ddayLabel = '일정 미정'; ddayColor = '#9EA2A1'; }
     const bgColor = isComplete ? 'rgba(158,162,161,0.06)' : (item.dday !== null && item.dday <= 7 ? 'rgba(210,0,21,0.04)' : 'rgba(192,206,209,0.08)');
     const dateStr = item.dateStart ? item.dateStart.substring(5).replace('-', '.') + (item.dateEnd ? '~' + item.dateEnd.substring(5).replace('-', '.') : '') : '미정';
-    let c = '<div class="dday-card' + extraClass + '" style="background:' + bgColor + ';flex:0 0 auto;min-width:150px;" onclick="openStationDetail(' + currentYear + ',&apos;' + item.station + '&apos;)">';
+    // v19.11.7: 완료 카드 점수를 우상단 absolute 배지로 (다가오는 카드와 layout 통일)
+    let c = '<div class="dday-card' + extraClass + '" style="background:' + bgColor + ';flex:0 0 auto;min-width:150px;">';
+    // 우상단 점수 배지 (완료 카드만)
+    if (isComplete && item.avgScore !== null) {
+      c += '<div style="position:absolute;top:12px;right:12px;"><div class="badge-pill" style="' + Scoring.getBadgeStyle(item.avgScore) + 'font-size:11px;font-weight:700;padding:3px 10px;">' + item.avgScore.toFixed(2) + '점</div></div>';
+    }
     c += '<div style="font-size:24px;font-weight:800;color:' + ddayColor + ';letter-spacing:-0.5px;margin-bottom:8px;">' + ddayLabel + '</div>';
     c += '<div style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:4px;">' + item.station + '</div>';
     c += '<div style="font-size:12px;color:#9EA2A1;margin-bottom:8px;">' + dateStr + '</div>';
-    if (isComplete && item.avgScore !== null) {
-      c += '<div style="margin-top:auto;"><div class="badge-pill" style="' + Scoring.getBadgeStyle(item.avgScore) + 'font-size:12px;font-weight:600;display:inline-block;">' + item.avgScore.toFixed(2) + '점</div></div>';
-    } else if (!isComplete) {
-      c += '<div style="margin-top:auto;display:flex;flex-direction:column;gap:6px;">';
-      c += '<div style="font-size:12px;color:#D20015;font-weight:500;">상세 &rsaquo;</div>';
-      c += '<div style="font-size:12px;color:#D20015;font-weight:500;cursor:pointer;" onclick="event.stopPropagation();switchTab(1);setTimeout(function(){var y=document.getElementById(\'inputYear\');if(y)y.value=\'' + currentYear + '\';var t=document.getElementById(\'inputTarget\');if(t){t.value=\'' + item.station + '\';if(t._comboRefresh)t._comboRefresh();}if(typeof inputSearch===\'function\')inputSearch();},100);">점검표 작성 &rsaquo;</div>';
-      c += '</div>';
+    // 하단 액션 링크 — 완료/미완료 통일된 디자인
+    c += '<div style="margin-top:auto;display:flex;flex-direction:column;gap:6px;">';
+    c += '<div style="font-size:12px;color:#D20015;font-weight:500;cursor:pointer;" onclick="openStationDetail(' + currentYear + ',&apos;' + item.station + '&apos;)">상세 &rsaquo;</div>';
+    if (isComplete) {
+      // v19.11.8: viewType/viewRegion/viewStatus 명시 + 첫 결과 행 자동 expand
+      c += '<div style="font-size:12px;color:#D20015;font-weight:500;cursor:pointer;" onclick="switchTab(2);setTimeout(function(){var y=document.getElementById(\'viewYear\');if(y)y.value=\'' + currentYear + '\';var vt=document.getElementById(\'viewType\');if(vt)vt.value=\'전체\';var vr=document.getElementById(\'viewRegion\');if(vr)vr.value=\'전체\';var vs=document.getElementById(\'viewStatus\');if(vs)vs.value=\'전체\';var t=document.getElementById(\'viewTarget\');if(t){t.value=\'' + item.station + '\';if(t._comboRefresh)t._comboRefresh();}if(typeof viewSearch===\'function\')viewSearch();setTimeout(function(){var fr=document.getElementById(\'viewGroup_0\');if(fr)fr.classList.remove(\'hidden\');},80);},100);">점검표 보기 &rsaquo;</div>';
+    } else {
+      c += '<div style="font-size:12px;color:#D20015;font-weight:500;cursor:pointer;" onclick="switchTab(1);setTimeout(function(){var y=document.getElementById(\'inputYear\');if(y)y.value=\'' + currentYear + '\';var t=document.getElementById(\'inputTarget\');if(t){t.value=\'' + item.station + '\';if(t._comboRefresh)t._comboRefresh();}if(typeof inputSearch===\'function\')inputSearch();},100);">점검표 작성 &rsaquo;</div>';
     }
+    c += '</div>';
     c += '</div>';
     return c;
   }
@@ -11509,6 +11615,824 @@ function loadCarDataFromFirebase() {
   }).catch(e => console.warn('CAR load from Firebase failed:', e));
 }
 
+// =============================================================================
+// v19.11.0: 심사 메모(Audit Memo) — public 메모 / private 메모 / private 체크리스트
+// =============================================================================
+// 데이터 모델:
+//   { id, year, scopeType:'branch'|'division'|'outsourcing', station, type:'note'|'checklist',
+//     visibility:'public'|'private', authorEmpNo, authorName, createdAt, updatedAt,
+//     content?(note), title?(checklist), items?[{id,text,checked,checkedAt}] }
+//   - 무효 조합: type=checklist + visibility=public — 클라이언트 검증으로 차단
+//   - 권한: 본인만 수정/삭제, public 메모는 admin도 삭제 가능
+function _memoStationKey(station) { return String(station || '').replace(/[\/\.#$\[\]]/g, '_'); }
+function makeMemoId() { return 'memo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+function makeCheckItemId() { return 'ci_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+
+function loadMemos(year, station) {
+  // 단일 (year, station) 메모 맵 — { memoId: memo }
+  const all = SafeStorage.get(MEMO_STORAGE_KEY, {});
+  const key = year + '_' + station;
+  return all[key] || {};
+}
+
+function loadAllMemos() {
+  // 전체 — { 'year_station': { memoId: memo } }
+  return SafeStorage.get(MEMO_STORAGE_KEY, {});
+}
+
+function _setMemoLocal(year, station, memoId, memo) {
+  const all = SafeStorage.get(MEMO_STORAGE_KEY, {});
+  const key = year + '_' + station;
+  if (!all[key]) all[key] = {};
+  if (memo === null) delete all[key][memoId];
+  else all[key][memoId] = memo;
+  if (Object.keys(all[key] || {}).length === 0) delete all[key];
+  SafeStorage.set(MEMO_STORAGE_KEY, all);
+}
+
+function saveMemo(memoInput) {
+  // upsert: id 없으면 신규, 있으면 갱신
+  if (!currentUser) { showToast('로그인이 필요합니다.', 'error'); return null; }
+  const memo = Object.assign({}, memoInput);
+  if (!memo.year || !memo.station || !memo.type) { showToast('메모 저장 실패: 필수 정보 누락', 'error'); return null; }
+  if (memo.type !== 'note' && memo.type !== 'checklist') { showToast('메모 타입 오류', 'error'); return null; }
+  // 무효 조합 차단
+  if (memo.type === 'checklist' && memo.visibility !== 'private') memo.visibility = 'private';
+  if (memo.visibility !== 'public' && memo.visibility !== 'private') memo.visibility = 'private';
+
+  const now = new Date().toISOString();
+  const isNew = !memo.id;
+  if (isNew) {
+    memo.id = makeMemoId();
+    memo.createdAt = now;
+    memo.authorEmpNo = currentUser.empNo;
+    memo.authorName = currentUser.name || currentUser.empNo;
+  }
+  memo.updatedAt = now;
+
+  // type별 필수 필드 정리
+  if (memo.type === 'note') {
+    memo.content = (memo.content || '').toString();
+    delete memo.title; delete memo.items;
+    if (!memo.content.trim()) { showToast('메모 내용을 입력해주세요.', 'error'); return null; }
+  } else {
+    // v19.11.2: 체크리스트 제목 제거 — 항상 빈 값 (UI에서 표시 안 함)
+    memo.title = '';
+    if (!Array.isArray(memo.items)) memo.items = [];
+    memo.items = memo.items.filter(it => it && (it.text || '').toString().trim()).map(it => ({
+      id: it.id || makeCheckItemId(),
+      text: it.text.toString().trim(),
+      checked: !!it.checked,
+      checkedAt: it.checked ? (it.checkedAt || now) : null
+    }));
+    if (memo.items.length === 0) { showToast('체크리스트 항목을 1개 이상 추가해주세요.', 'error'); return null; }
+    delete memo.content;
+  }
+
+  _setMemoLocal(memo.year, memo.station, memo.id, memo);
+
+  // Firebase 동기화
+  if (firebaseDb) {
+    const stKey = _memoStationKey(memo.station);
+    const ref = dbRef('memos/' + memo.year + '/' + stKey);
+    if (ref) {
+      ref.child(memo.id).set(memo).catch(e => console.warn('Memo Firebase save failed:', e));
+    }
+  }
+  return memo;
+}
+
+function deleteMemo(year, station, memoId) {
+  // 권한: 본인 메모 또는 admin이 public 메모 삭제
+  const all = SafeStorage.get(MEMO_STORAGE_KEY, {});
+  const key = year + '_' + station;
+  const memo = all[key] && all[key][memoId];
+  if (!memo) { showToast('메모를 찾을 수 없습니다.', 'error'); return false; }
+  const isMine = currentUser && memo.authorEmpNo === currentUser.empNo;
+  const canModerate = currentUser && currentUser.role === 'admin' && memo.visibility === 'public';
+  if (!isMine && !canModerate) { showToast('삭제 권한이 없습니다.', 'error'); return false; }
+
+  _setMemoLocal(year, station, memoId, null);
+
+  if (firebaseDb) {
+    const stKey = _memoStationKey(station);
+    const ref = dbRef('memos/' + year + '/' + stKey);
+    if (ref) ref.child(memoId).remove().catch(e => console.warn('Memo Firebase delete failed:', e));
+  }
+  return true;
+}
+
+function toggleChecklistItem(year, station, memoId, itemId) {
+  // 항목별 체크 토글 — 항목 path로 직접 set하여 동시편집 충돌 회피
+  const all = SafeStorage.get(MEMO_STORAGE_KEY, {});
+  const key = year + '_' + station;
+  const memo = all[key] && all[key][memoId];
+  if (!memo || memo.type !== 'checklist') return false;
+  // 본인 체크리스트만 (private 강제이므로 본인 외 보일 일이 없지만 방어)
+  if (!currentUser || memo.authorEmpNo !== currentUser.empNo) {
+    showToast('체크 권한이 없습니다.', 'error'); return false;
+  }
+  const idx = memo.items.findIndex(it => it.id === itemId);
+  if (idx < 0) return false;
+  memo.items[idx].checked = !memo.items[idx].checked;
+  memo.items[idx].checkedAt = memo.items[idx].checked ? new Date().toISOString() : null;
+  memo.updatedAt = new Date().toISOString();
+
+  _setMemoLocal(year, station, memoId, memo);
+
+  if (firebaseDb) {
+    const stKey = _memoStationKey(station);
+    const ref = dbRef('memos/' + year + '/' + stKey + '/' + memoId);
+    if (ref) {
+      ref.child('items/' + idx + '/checked').set(memo.items[idx].checked);
+      ref.child('items/' + idx + '/checkedAt').set(memo.items[idx].checkedAt);
+      ref.child('updatedAt').set(memo.updatedAt);
+    }
+  }
+  return memo.items[idx].checked;
+}
+
+function _memoVisibleToMe(memo) {
+  if (!memo) return false;
+  if (memo.visibility === 'public') return true;
+  // private — 본인만
+  return !!(currentUser && memo.authorEmpNo === currentUser.empNo);
+}
+
+function listMemosVisibleToMe(year, station) {
+  const memos = loadMemos(year, station);
+  return Object.values(memos).filter(_memoVisibleToMe).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+}
+
+function listAllMemosVisibleToMe(year) {
+  // 전체 station 횡단
+  const all = loadAllMemos();
+  const out = [];
+  for (const [key, byId] of Object.entries(all)) {
+    if (year && !key.startsWith(String(year) + '_')) continue;
+    Object.values(byId || {}).forEach(m => { if (_memoVisibleToMe(m)) out.push(m); });
+  }
+  return out.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+}
+
+function getMyChecklistProgress(year, station) {
+  // Phase 4 상단 배지용 — 본인의 private 체크리스트 항목 N/M
+  if (!currentUser) return { total: 0, checked: 0 };
+  const memos = listMemosVisibleToMe(year, station).filter(m =>
+    m.type === 'checklist' && m.authorEmpNo === currentUser.empNo
+  );
+  let total = 0, checked = 0;
+  memos.forEach(m => (m.items || []).forEach(it => { total++; if (it.checked) checked++; }));
+  return { total, checked, memos };
+}
+
+// =============================================================================
+// v19.11.0: 메모 UI — 작업창(Tab 7), 사이드 패널(Phase 4), 지점 상세 카드
+// =============================================================================
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function _fmtDateShort(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso); if (isNaN(d)) return '';
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+    return (d.getMonth()+1) + '/' + d.getDate();
+  } catch(e) { return ''; }
+}
+
+// 작업창(Tab 7) 상태
+let memoWorkspaceState = {
+  draftType: 'note',           // 'note' | 'checklist'
+  draftVisibility: 'public',   // 'public' | 'private' (checklist 선택 시 자동 private)
+  draftScopeType: 'branch',
+  draftYear: null,
+  draftStation: '',
+  draftContent: '',
+  draftTitle: '',
+  draftItems: [],              // 작성 중 항목 [{tempId, text}]
+  filterYear: 'all',
+  filterStation: 'all',
+  filterType: 'all',           // 'all' | 'note' | 'checklist'
+  filterVisibility: 'all',     // 'all' | 'public' | 'private'
+  filterSearch: ''
+};
+
+function _memoStationOptionsHTML(scopeType, currentVal) {
+  // v19.11.5: REGIONS 구조 수정 — { region: { stations: [...] } } 객체
+  let names = [];
+  try {
+    if (scopeType === 'branch') {
+      if (typeof REGIONS !== 'undefined') {
+        Object.values(REGIONS).forEach(reg => {
+          if (reg && Array.isArray(reg.stations)) {
+            reg.stations.forEach(s => names.push(s));
+          } else if (Array.isArray(reg)) {
+            // 혹시 모를 단순 배열 포맷 호환
+            reg.forEach(s => names.push(s));
+          }
+        });
+      }
+    } else if (scopeType === 'division') {
+      if (typeof DIVISION_NAMES !== 'undefined' && Array.isArray(DIVISION_NAMES)) {
+        names = DIVISION_NAMES.slice();
+      }
+    } else if (scopeType === 'outsourcing') {
+      if (typeof OUTSOURCING_TYPES !== 'undefined' && typeof CHECKLIST_REGISTRY !== 'undefined') {
+        OUTSOURCING_TYPES.forEach(k => { if (CHECKLIST_REGISTRY[k]) names.push(CHECKLIST_REGISTRY[k].name); });
+      }
+    }
+  } catch(e) {
+    console.warn('_memoStationOptionsHTML error:', e);
+  }
+  // 중복 제거 + 정렬
+  names = Array.from(new Set(names)).filter(Boolean).sort();
+  let h = '<option value="">선택하세요</option>';
+  names.forEach(n => { h += `<option value="${_esc(n)}"${n===currentVal?' selected':''}>${_esc(n)}</option>`; });
+  return h;
+}
+
+function _renderMemoCard(memo, opts) {
+  opts = opts || {};
+  const isMine = currentUser && memo.authorEmpNo === currentUser.empNo;
+  const canDelete = isMine || (currentUser && currentUser.role === 'admin' && memo.visibility === 'public');
+  // v19.11.3: Notion 스타일 — 폰트 키움, 메타 13px, 본문 16px, 패딩 18px
+  const visBadge = memo.visibility === 'public'
+    ? '<span class="badge-pill" style="background:rgba(0,103,196,0.15);color:#0067C4;font-size:12px;font-weight:600;padding:3px 10px;">공유</span>'
+    : '<span class="badge-pill" style="background:rgba(158,162,161,0.15);color:#6E7273;font-size:12px;font-weight:600;padding:3px 10px;">나만 보기</span>';
+  const typeBadge = memo.type === 'checklist'
+    ? '<span class="badge-pill" style="background:rgba(210,0,21,0.12);color:#D20015;font-size:12px;font-weight:600;padding:3px 10px;">☑ 체크리스트</span>'
+    : '<span class="badge-pill" style="background:rgba(34,197,94,0.12);color:#22C55E;font-size:12px;font-weight:600;padding:3px 10px;">📝 메모</span>';
+
+  let body = '';
+  if (memo.type === 'note') {
+    body = `<div style="font-size:16px;color:#1a1c1d;line-height:1.6;white-space:pre-wrap;word-break:break-word;letter-spacing:-0.2px;">${_esc(memo.content || '')}</div>`;
+  } else {
+    const items = memo.items || [];
+    const checked = items.filter(it => it.checked).length;
+    const total = items.length;
+    const pct = total ? Math.round(checked / total * 100) : 0;
+    body = `<div style="font-size:13px;font-weight:700;color:#565A5B;margin-bottom:10px;letter-spacing:-0.2px;">사전 확인 <span style="color:${pct===100?'#16a34a':'#D20015'};">${checked}/${total}</span> · ${pct}%</div>`;
+    body += '<div style="background:rgba(0,0,0,0.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:14px;"><div style="background:linear-gradient(135deg,#22C55E,#16a34a);height:100%;width:' + pct + '%;transition:width 0.3s;"></div></div>';
+    body += '<div style="display:flex;flex-direction:column;gap:10px;">';
+    items.forEach(it => {
+      const canCheck = isMine;
+      body += `<label style="display:flex;align-items:flex-start;gap:12px;cursor:${canCheck?'pointer':'default'};font-size:15px;line-height:1.5;${it.checked?'color:#9EA2A1;text-decoration:line-through;':'color:#1a1c1d;'}">`;
+      body += `<input type="checkbox" ${it.checked?'checked':''} ${canCheck?'':'disabled'} ${canCheck?`onchange="onMemoChecklistToggle(${memo.year},'${_esc(memo.station)}','${memo.id}','${it.id}')"`:''} style="margin-top:3px;flex-shrink:0;width:18px;height:18px;cursor:${canCheck?'pointer':'default'};accent-color:#D20015;">`;
+      body += `<span style="word-break:break-word;letter-spacing:-0.2px;">${_esc(it.text)}</span></label>`;
+    });
+    body += '</div>';
+  }
+
+  let actions = '';
+  if (isMine) {
+    actions += `<button onclick="onMemoEdit('${memo.id}','${memo.year}','${_esc(memo.station)}')" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">수정</button>`;
+  }
+  if (canDelete) {
+    actions += `<button onclick="onMemoDelete(${memo.year},'${_esc(memo.station)}','${memo.id}')" style="background:none;border:none;font-size:13px;color:#D20015;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)'" onmouseout="this.style.background='none'">삭제</button>`;
+  }
+
+  const showScope = opts.showScope !== false;
+  const scopeLine = showScope
+    ? `<div style="font-size:12px;color:#9EA2A1;margin-bottom:8px;font-weight:500;">${memo.year} · ${_esc(memo.station)}</div>`
+    : '';
+
+  return `<div class="apple-card" style="padding:18px 20px;border-left:4px solid ${memo.visibility==='public'?'#0067C4':(memo.type==='checklist'?'#D20015':'#9EA2A1')};transition:box-shadow 0.15s;" onmouseover="this.style.boxShadow='rgba(0,0,0,0.1) 0px 4px 14px 0px'" onmouseout="this.style.boxShadow='none'">
+    ${scopeLine}
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+      ${typeBadge}${visBadge}
+      <span style="font-size:13px;color:#9EA2A1;margin-left:auto;font-weight:500;">${_esc(memo.authorName || '')} · ${_fmtDateShort(memo.updatedAt || memo.createdAt)}</span>
+    </div>
+    ${body}
+    <div style="display:flex;justify-content:flex-end;gap:4px;margin-top:12px;border-top:1px solid rgba(192,206,209,0.2);padding-top:8px;">${actions}</div>
+  </div>`;
+}
+
+function _draftFormHTML(idPrefix) {
+  const s = memoWorkspaceState;
+  const yr = s.draftYear || (typeof selectedYear !== 'undefined' ? selectedYear : new Date().getFullYear());
+  const yearOpts = [];
+  for (let y = yr - 1; y <= yr + 1; y++) yearOpts.push(`<option value="${y}"${y===yr?' selected':''}>${y}</option>`);
+  const isChecklist = s.draftType === 'checklist';
+  const visLocked = isChecklist;
+  const itemsHTML = (s.draftItems || []).map((it, i) =>
+    `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+      <input type="text" class="apple-input" placeholder="항목 입력" value="${_esc(it.text)}" oninput="memoWorkspaceState.draftItems[${i}].text=this.value;" style="flex:1;padding:8px 12px;font-size:13px;">
+      <button onclick="onMemoDraftRemoveItem(${i})" style="background:none;border:none;color:#9EA2A1;font-size:18px;cursor:pointer;padding:0 6px;">×</button>
+    </div>`
+  ).join('');
+
+  // v19.11.3: 작업창 입력 폼 — Notion 스타일, 폰트 키움
+  const itemsHTMLws = (s.draftItems || []).map((it, i) =>
+    `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <input type="text" class="apple-input" placeholder="확인 항목 입력" value="${_esc(it.text)}" oninput="memoWorkspaceState.draftItems[${i}].text=this.value;" style="flex:1;padding:11px 14px;font-size:15px;">
+      <button onclick="onMemoDraftRemoveItem(${i})" style="background:none;border:none;color:#9EA2A1;font-size:22px;cursor:pointer;padding:6px 10px;border-radius:8px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)';this.style.color='#D20015'" onmouseout="this.style.background='none';this.style.color='#9EA2A1'">×</button>
+    </div>`
+  ).join('');
+
+  // v19.11.4: 워크스페이스 토글도 세그먼티드 컨트롤로 (큰 사이즈 버전)
+  const wsSegActive = 'background:#fff;color:#1a1c1d;box-shadow:0 1px 3px rgba(0,0,0,0.1);font-weight:600;';
+  const wsSegInactive = 'background:transparent;color:#6E7273;font-weight:500;';
+  const wsSegDisabled = 'opacity:0.4;cursor:not-allowed;';
+  const wsSegBase = 'border:none;border-radius:8px;padding:8px 18px;font-size:14px;cursor:pointer;transition:all 0.15s;letter-spacing:-0.2px;';
+
+  return `<div class="apple-card" id="${idPrefix}_form" style="padding:24px;">
+    <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center;">
+      <!-- 타입 세그먼티드 -->
+      <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:11px;padding:3px;">
+        <button onclick="onMemoDraftType('note')" style="${wsSegBase}${s.draftType==='note'?wsSegActive:wsSegInactive}">📝 메모</button>
+        <button onclick="onMemoDraftType('checklist')" style="${wsSegBase}${s.draftType==='checklist'?wsSegActive:wsSegInactive}">☑ 체크리스트</button>
+      </div>
+      <!-- 공개범위 세그먼티드 -->
+      <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:11px;padding:3px;">
+        <button onclick="${visLocked?'':`onMemoDraftVisibility('public')`}" ${visLocked?'disabled':''} style="${wsSegBase}${s.draftVisibility==='public'&&!visLocked?wsSegActive:wsSegInactive}${visLocked?wsSegDisabled:''}">전체 공유</button>
+        <button onclick="onMemoDraftVisibility('private')" style="${wsSegBase}${(s.draftVisibility==='private'||visLocked)?wsSegActive:wsSegInactive}">나만 보기${visLocked?' (자동)':''}</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div>
+        <label class="apple-label" style="font-size:13px;">연도</label>
+        <select class="apple-input" onchange="memoWorkspaceState.draftYear=parseInt(this.value);" style="font-size:14px;">${yearOpts.join('')}</select>
+      </div>
+      <div>
+        <label class="apple-label" style="font-size:13px;">대상 구분</label>
+        <select class="apple-input" onchange="onMemoDraftScopeType(this.value)" style="font-size:14px;">
+          <option value="branch"${s.draftScopeType==='branch'?' selected':''}>지점</option>
+          <option value="division"${s.draftScopeType==='division'?' selected':''}>실/본부</option>
+          <option value="outsourcing"${s.draftScopeType==='outsourcing'?' selected':''}>외주협력</option>
+        </select>
+      </div>
+      <div>
+        <label class="apple-label" style="font-size:13px;">대상</label>
+        <select class="apple-input" id="${idPrefix}_station" onchange="memoWorkspaceState.draftStation=this.value;" style="font-size:14px;">${_memoStationOptionsHTML(s.draftScopeType, s.draftStation)}</select>
+      </div>
+    </div>
+    ${isChecklist
+      ? `<div class="mb-4">
+          <label class="apple-label" style="font-size:13px;">사전 확인 항목</label>
+          <div id="${idPrefix}_items">${itemsHTMLws}</div>
+          <button onclick="onMemoDraftAddItem('${idPrefix}')" class="pill-btn pill-btn-outline" style="font-size:14px;padding:9px 18px;margin-top:6px;">+ 항목 추가</button>
+         </div>`
+      : `<div class="mb-4">
+          <label class="apple-label" style="font-size:13px;">내용</label>
+          <textarea class="apple-input" rows="6" placeholder="자유롭게 메모하세요 (공유: 공지/인수인계 / 나만 보기: 개인 메모)" oninput="memoWorkspaceState.draftContent=this.value;" style="resize:vertical;font-size:15px;line-height:1.6;padding:14px;">${_esc(s.draftContent)}</textarea>
+         </div>`}
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="onMemoDraftReset()" class="pill-btn pill-btn-outline" style="font-size:14px;padding:10px 22px;">초기화</button>
+      <button onclick="onMemoDraftSave()" class="pill-btn pill-btn-primary" style="font-size:14px;padding:10px 28px;font-weight:600;">저장</button>
+    </div>
+  </div>`;
+}
+
+function renderMemoWorkspace() {
+  const el = document.getElementById('memoWorkspaceArea');
+  if (!el) return;
+  if (!currentUser) { el.innerHTML = '<div class="apple-card p-6">로그인이 필요합니다.</div>'; return; }
+  // v19.11.5: 안전망 — 렌더 중 에러 발생 시 사용자에게 표시
+  try { _renderMemoWorkspaceInner(el); }
+  catch(e) {
+    console.error('renderMemoWorkspace error:', e);
+    el.innerHTML = '<div class="apple-card p-6" style="color:#D20015;font-size:14px;">메모 화면 로드 중 오류가 발생했습니다.<br><span style="font-size:12px;color:#9EA2A1;">' + _esc(e.message || '') + '</span><br><button onclick="renderMemoWorkspace()" class="pill-btn pill-btn-outline" style="font-size:13px;margin-top:12px;">다시 시도</button></div>';
+  }
+}
+function _renderMemoWorkspaceInner(el) {
+  const s = memoWorkspaceState;
+  if (!s.draftYear) s.draftYear = (typeof selectedYear !== 'undefined' ? selectedYear : new Date().getFullYear());
+
+  // 필터 옵션
+  const allMemos = listAllMemosVisibleToMe();
+  const years = Array.from(new Set(allMemos.map(m => m.year))).sort((a,b) => b-a);
+  const stations = Array.from(new Set(allMemos.map(m => m.station))).sort();
+
+  const yearFilterOpts = '<option value="all">전체 연도</option>' + years.map(y => `<option value="${y}"${String(s.filterYear)===String(y)?' selected':''}>${y}</option>`).join('');
+  const stationFilterOpts = '<option value="all">전체 지점/실본부</option>' + stations.map(st => `<option value="${_esc(st)}"${s.filterStation===st?' selected':''}>${_esc(st)}</option>`).join('');
+
+  // 필터 적용
+  let list = allMemos.slice();
+  if (s.filterYear !== 'all') list = list.filter(m => String(m.year) === String(s.filterYear));
+  if (s.filterStation !== 'all') list = list.filter(m => m.station === s.filterStation);
+  if (s.filterType !== 'all') list = list.filter(m => m.type === s.filterType);
+  if (s.filterVisibility !== 'all') list = list.filter(m => m.visibility === s.filterVisibility);
+  if (s.filterSearch.trim()) {
+    const q = s.filterSearch.trim().toLowerCase();
+    list = list.filter(m => {
+      const hay = (m.content || '') + ' ' + (m.title || '') + ' ' + (m.items || []).map(it => it.text).join(' ');
+      return hay.toLowerCase().includes(q);
+    });
+  }
+
+  // v19.11.3: 워크스페이스 폰트·여백 일제 향상
+  el.innerHTML = `
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+      <div class="md:col-span-5">
+        <div style="font-size:14px;font-weight:700;color:#303A3C;margin-bottom:12px;padding-left:2px;letter-spacing:-0.2px;">✏️ 빠른 작성</div>
+        ${_draftFormHTML('memoWS')}
+      </div>
+      <div class="md:col-span-7">
+        <div style="font-size:14px;font-weight:700;color:#303A3C;margin-bottom:12px;padding-left:2px;letter-spacing:-0.2px;">🗂 메모 보기</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <input type="text" class="apple-input" placeholder="🔍 검색" value="${_esc(s.filterSearch)}" oninput="memoWorkspaceState.filterSearch=this.value;clearTimeout(window._memoSearchT);window._memoSearchT=setTimeout(renderMemoWorkspace,200);" style="flex:1 1 200px;font-size:14px;padding:11px 14px;">
+          <select class="apple-input" onchange="memoWorkspaceState.filterYear=this.value;renderMemoWorkspace();" style="font-size:13px;padding:11px 12px;flex:0 0 auto;">${yearFilterOpts}</select>
+          <select class="apple-input" onchange="memoWorkspaceState.filterStation=this.value;renderMemoWorkspace();" style="font-size:13px;padding:11px 12px;flex:0 0 auto;max-width:180px;">${stationFilterOpts}</select>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;">
+          ${['all','note','checklist'].map(t => `<button onclick="memoWorkspaceState.filterType='${t}';renderMemoWorkspace();" class="pill-btn ${s.filterType===t?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${t==='all'?'전체':t==='note'?'📝 메모':'☑ 체크리스트'}</button>`).join('')}
+          <span style="border-left:1px solid rgba(192,206,209,0.5);margin:0 2px;"></span>
+          ${['all','public','private'].map(v => `<button onclick="memoWorkspaceState.filterVisibility='${v}';renderMemoWorkspace();" class="pill-btn ${s.filterVisibility===v?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${v==='all'?'전체':v==='public'?'공유':'나만 보기'}</button>`).join('')}
+        </div>
+        <div style="font-size:14px;color:#9EA2A1;margin-bottom:12px;font-weight:600;">총 ${list.length}건</div>
+        <div style="display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow-y:auto;padding-right:6px;">
+          ${list.length === 0
+            ? '<div class="apple-card" style="padding:32px;text-align:center;color:#9EA2A1;font-size:15px;">메모가 없습니다.<br><span style="font-size:13px;">좌측에서 작성해보세요</span></div>'
+            : list.map(m => _renderMemoCard(m, { showScope: true })).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+// 작업창 액션
+function onMemoDraftType(t) { memoWorkspaceState.draftType = t; if (t === 'checklist') memoWorkspaceState.draftVisibility = 'private'; renderMemoWorkspace(); }
+function onMemoDraftVisibility(v) { if (memoWorkspaceState.draftType === 'checklist') return; memoWorkspaceState.draftVisibility = v; renderMemoWorkspace(); }
+function onMemoDraftScopeType(t) { memoWorkspaceState.draftScopeType = t; memoWorkspaceState.draftStation = ''; renderMemoWorkspace(); }
+function onMemoDraftAddItem(prefix) {
+  memoWorkspaceState.draftItems.push({ tempId: makeCheckItemId(), text: '' });
+  renderMemoWorkspace();
+}
+function onMemoDraftRemoveItem(idx) {
+  memoWorkspaceState.draftItems.splice(idx, 1);
+  renderMemoWorkspace();
+}
+function onMemoDraftReset() {
+  memoWorkspaceState.draftType = 'note';
+  memoWorkspaceState.draftVisibility = 'public';
+  memoWorkspaceState.draftScopeType = 'branch';
+  memoWorkspaceState.draftStation = '';
+  memoWorkspaceState.draftContent = '';
+  memoWorkspaceState.draftTitle = '';
+  memoWorkspaceState.draftItems = [];
+  renderMemoWorkspace();
+}
+function onMemoDraftSave() {
+  const s = memoWorkspaceState;
+  if (!s.draftStation) { showToast('대상을 선택해주세요.', 'error'); return; }
+  const memo = {
+    year: parseInt(s.draftYear),
+    scopeType: s.draftScopeType,
+    station: s.draftStation,
+    type: s.draftType,
+    visibility: s.draftVisibility
+  };
+  if (s.draftType === 'note') memo.content = s.draftContent;
+  else { memo.title = s.draftTitle; memo.items = s.draftItems.map(it => ({ id: makeCheckItemId(), text: it.text, checked: false })); }
+  const saved = saveMemo(memo);
+  if (saved) {
+    showToast('저장되었습니다.', 'success');
+    onMemoDraftReset();
+  }
+}
+function onMemoDelete(year, station, memoId) {
+  if (!confirm('삭제하시겠습니까?')) return;
+  if (deleteMemo(year, station, memoId)) {
+    showToast('삭제되었습니다.', 'success');
+    if (activeTab === 7) renderMemoWorkspace();
+    // v19.11.6: Phase 2/4 양쪽에서 패널 갱신
+    if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 2 || inputPhase === 4)) renderMemoSidePanel();
+    if (typeof updateMemoBadge === 'function') updateMemoBadge();
+  }
+}
+function onMemoChecklistToggle(year, station, memoId, itemId) {
+  toggleChecklistItem(year, station, memoId, itemId);
+  if (activeTab === 7) renderMemoWorkspace();
+  // v19.11.6: Phase 2/4 양쪽에서 패널 갱신 (이전 버그: phase===4만 체크 → Phase 2 메모 영역 갱신 안 됨)
+  if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 2 || inputPhase === 4)) renderMemoSidePanel();
+  if (typeof updateMemoBadge === 'function') updateMemoBadge();
+}
+function onMemoEdit(memoId, year, station) {
+  const memos = loadMemos(year, station);
+  const memo = memos[memoId];
+  if (!memo) return;
+  memoWorkspaceState.draftType = memo.type;
+  memoWorkspaceState.draftVisibility = memo.visibility;
+  memoWorkspaceState.draftScopeType = memo.scopeType || 'branch';
+  memoWorkspaceState.draftYear = memo.year;
+  memoWorkspaceState.draftStation = memo.station;
+  memoWorkspaceState.draftContent = memo.content || '';
+  memoWorkspaceState.draftTitle = memo.title || '';
+  memoWorkspaceState.draftItems = (memo.items || []).map(it => ({ tempId: it.id, text: it.text, originalId: it.id, checked: it.checked }));
+  // 기존 메모 삭제 후 새로 저장 패턴 단순화 — 사용자에게 알림 후 진행
+  // 여기서는 "복사 후 수정"처럼 동작하지 않고 실제 갱신을 위해 ID를 보존해야 한다.
+  // saveMemo는 id 있으면 갱신하므로, draft에 _editingId를 보관.
+  memoWorkspaceState._editingId = memo.id;
+  if (activeTab !== 7) switchTab(7);
+  else renderMemoWorkspace();
+  showToast('수정 모드로 전환했습니다. 저장 시 갱신됩니다.', 'info');
+}
+
+// =============================================================================
+// v19.11.0: Phase 4 사이드 패널 (데스크톱) / 바텀시트 (모바일) / 상단 배지
+// =============================================================================
+let _memoPanelOpen = true; // 데스크톱 기본 펼침
+let _memoQuickDraft = { type: 'note', visibility: 'public', text: '', items: [], title: '', open: false };
+
+function _phase4Scope() {
+  // Phase 4 컨텍스트 — selectedYear, selectedStation, selectedAuditCategory
+  const year = (typeof selectedYear !== 'undefined' && selectedYear) ? selectedYear : new Date().getFullYear();
+  const station = (typeof selectedStation !== 'undefined') ? selectedStation : '';
+  const scopeType = (typeof selectedAuditCategory !== 'undefined' && selectedAuditCategory === 'division') ? 'division'
+                   : (typeof selectedAuditCategory !== 'undefined' && selectedAuditCategory === 'outsourcing') ? 'outsourcing'
+                   : 'branch';
+  return { year, station, scopeType };
+}
+
+function _renderMemoPanelInner() {
+  const { year, station } = _phase4Scope();
+  if (!station) return '<div style="font-size:13px;color:#9EA2A1;padding:14px;">지점을 선택하세요.</div>';
+  const memos = listMemosVisibleToMe(year, station);
+  const publicNotes = memos.filter(m => m.type === 'note' && m.visibility === 'public');
+  const myChecklists = memos.filter(m => m.type === 'checklist' && currentUser && m.authorEmpNo === currentUser.empNo);
+  const myNotes = memos.filter(m => m.type === 'note' && m.visibility === 'private' && currentUser && m.authorEmpNo === currentUser.empNo);
+
+  // v19.11.3: 빠른 작성 폼 — Notion 스타일, 폰트/패딩 키움
+  const qd = _memoQuickDraft;
+  const isCl = qd.type === 'checklist';
+  const itemsHTML = (qd.items || []).map((it, i) =>
+    `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <input type="text" class="apple-input" placeholder="확인 항목 입력" value="${_esc(it.text)}" oninput="_memoQuickDraft.items[${i}].text=this.value;" style="flex:1;padding:10px 14px;font-size:14px;">
+      <button onclick="onMemoQuickRemoveItem(${i})" style="background:none;border:none;color:#9EA2A1;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)';this.style.color='#D20015'" onmouseout="this.style.background='none';this.style.color='#9EA2A1'">×</button>
+    </div>`).join('');
+
+  // v19.11.4: 토글 버튼을 iOS Segmented Control 스타일로 (컴팩트, 좌측 정렬)
+  const segActive = 'background:#fff;color:#1a1c1d;box-shadow:0 1px 3px rgba(0,0,0,0.08);font-weight:600;';
+  const segInactive = 'background:transparent;color:#6E7273;font-weight:500;';
+  const segDisabled = 'opacity:0.4;cursor:not-allowed;';
+  const segBtnBase = 'border:none;border-radius:7px;padding:6px 14px;font-size:13px;cursor:pointer;transition:all 0.15s;letter-spacing:-0.2px;';
+
+  const quickForm = !qd.open ? `<button onclick="onMemoQuickOpen()" style="background:none;border:1.5px dashed rgba(210,0,21,0.3);color:#D20015;border-radius:12px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:18px;display:inline-flex;align-items:center;gap:6px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.05)';this.style.borderColor='#D20015'" onmouseout="this.style.background='none';this.style.borderColor='rgba(210,0,21,0.3)'">+ 메모/체크리스트 추가</button>` : `
+    <div class="apple-card" style="padding:18px;margin-bottom:18px;background:#fafbfc;border:1px solid rgba(192,206,209,0.4);">
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+        <!-- 타입 세그먼티드 -->
+        <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:10px;padding:3px;">
+          <button onclick="onMemoQuickType('note')" style="${segBtnBase}${qd.type==='note'?segActive:segInactive}">📝 메모</button>
+          <button onclick="onMemoQuickType('checklist')" style="${segBtnBase}${qd.type==='checklist'?segActive:segInactive}">☑ 체크리스트</button>
+        </div>
+        <!-- 공개범위 세그먼티드 -->
+        <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:10px;padding:3px;">
+          <button onclick="${isCl?'':`onMemoQuickVisibility('public')`}" ${isCl?'disabled':''} style="${segBtnBase}${qd.visibility==='public'&&!isCl?segActive:segInactive}${isCl?segDisabled:''}">전체 공유</button>
+          <button onclick="onMemoQuickVisibility('private')" style="${segBtnBase}${(qd.visibility==='private'||isCl)?segActive:segInactive}">나만 보기</button>
+        </div>
+      </div>
+      ${isCl
+        ? `<div style="margin-bottom:8px;">${itemsHTML}</div>
+           <button onclick="onMemoQuickAddItem()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:7px 14px;margin-bottom:14px;">+ 항목 추가</button>`
+        : `<textarea class="apple-input" rows="4" placeholder="자유롭게 메모하세요" oninput="_memoQuickDraft.text=this.value;" style="font-size:15px;padding:12px 14px;line-height:1.5;resize:vertical;margin-bottom:14px;width:100%;">${_esc(qd.text)}</textarea>`}
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="onMemoQuickCancel()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 18px;">취소</button>
+        <button onclick="onMemoQuickSave()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 22px;font-weight:600;">저장</button>
+      </div>
+    </div>`;
+
+  function section(title, color, list, emoji) {
+    let h = `<div style="margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:0 2px;">
+        <span style="font-size:14px;font-weight:700;color:${color};letter-spacing:-0.2px;">${emoji} ${title}</span>
+        <span style="font-size:12px;color:#9EA2A1;font-weight:600;background:rgba(158,162,161,0.12);padding:1px 8px;border-radius:980px;">${list.length}</span>
+      </div>`;
+    if (list.length === 0) h += `<div style="font-size:13px;color:#C0CED1;padding:10px 4px;">아직 없습니다</div>`;
+    else h += '<div style="display:flex;flex-direction:column;gap:10px;">' + list.map(m => _renderMemoCard(m, { showScope: false })).join('') + '</div>';
+    h += '</div>';
+    return h;
+  }
+
+  return `<div style="padding:20px 22px;">
+    <div style="font-size:18px;font-weight:700;color:#1a1c1d;margin-bottom:4px;letter-spacing:-0.3px;">${_esc(station)}</div>
+    <div style="font-size:13px;color:#9EA2A1;margin-bottom:18px;font-weight:500;">${year}년 메모 / 체크리스트</div>
+    ${quickForm}
+    ${section('공유 메모', '#0067C4', publicNotes, '📢')}
+    ${section('내 체크리스트', '#D20015', myChecklists, '☑')}
+    ${section('내 메모', '#6E7273', myNotes, '📝')}
+  </div>`;
+}
+
+function _isDeskViewport() {
+  return window.matchMedia && window.matchMedia('(min-width: 769px)').matches;
+}
+function renderMemoSidePanel() {
+  const html = _renderMemoPanelInner();
+  // 데스크톱 패널 — 모바일에서는 절대 표시 안 함
+  const desk = document.getElementById('memoSidePanel');
+  if (desk) {
+    desk.innerHTML = html;
+    const showDesk = _isDeskViewport() && _memoPanelOpen;
+    desk.style.display = showDesk ? 'block' : 'none';
+  }
+  // Phase 2 하단 인라인 영역 (있으면 갱신)
+  const phase2Area = document.getElementById('phase2MemoArea');
+  if (phase2Area) phase2Area.innerHTML = html;
+  // 모바일 바텀시트 (열려있을 때만 갱신)
+  const sheet = document.getElementById('memoBottomSheet');
+  const sheetBody = document.getElementById('memoBottomSheetBody');
+  if (sheet && sheetBody && !sheet.classList.contains('hidden')) {
+    sheetBody.innerHTML = html;
+  }
+  updateMemoBadge();
+}
+
+function updateMemoBadge() {
+  const { year, station } = _phase4Scope();
+  if (!station) {
+    const b = document.getElementById('memoChecklistBadge'); if (b) b.style.display = 'none';
+    const fb = document.getElementById('memoFabBadge'); if (fb) fb.style.display = 'none';
+    return;
+  }
+  const p = getMyChecklistProgress(year, station);
+  const badge = document.getElementById('memoChecklistBadge');
+  if (badge) {
+    if (p.total > 0) {
+      const done = p.checked === p.total;
+      badge.style.display = '';
+      badge.textContent = '사전 체크 ' + p.checked + '/' + p.total + (done ? ' ✓' : '');
+      badge.style.background = done ? 'rgba(34,197,94,0.15)' : 'rgba(210,0,21,0.12)';
+      badge.style.color = done ? '#16a34a' : '#D20015';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  const fabBadge = document.getElementById('memoFabBadge');
+  if (fabBadge) {
+    const remaining = p.total - p.checked;
+    if (p.total > 0 && remaining > 0) {
+      fabBadge.style.display = '';
+      fabBadge.textContent = remaining;
+    } else {
+      fabBadge.style.display = 'none';
+    }
+  }
+}
+
+function showMemoPanelControls() {
+  // v19.11.1: Phase 4 사이드 패널은 데스크톱 전용. Phase 2 하단 인라인은 모든 화면. 모바일은 FAB.
+  const inPhase4 = (activeTab === 1 && typeof inputPhase !== 'undefined' && inputPhase === 4);
+  const inPhase2 = (activeTab === 1 && typeof inputPhase !== 'undefined' && inputPhase === 2);
+  const desk = document.getElementById('memoSidePanel');
+  const fab = document.getElementById('memoFab');
+  const toggleBtn = document.getElementById('memoPanelToggleDesktop');
+  const isDesk = _isDeskViewport();
+
+  // 데스크톱 사이드 패널 — Phase 4에서만, 데스크톱 viewport에서만
+  if (desk) desk.style.display = (inPhase4 && _memoPanelOpen && isDesk) ? 'block' : 'none';
+  // 토글 버튼 — Phase 4 + 데스크톱
+  if (toggleBtn) toggleBtn.style.display = (inPhase4 && isDesk) ? '' : 'none';
+  // FAB — Phase 4 + 모바일
+  if (fab) fab.style.display = (inPhase4 && !isDesk) ? 'flex' : 'none';
+
+  // Phase 2 또는 Phase 4 진입 시 메모 영역 갱신
+  if (inPhase2 || inPhase4) renderMemoSidePanel();
+}
+
+function toggleMemoPanel() {
+  if (!_isDeskViewport()) {
+    // 모바일에서는 토글 버튼이 보이면 안 되지만 안전망
+    openMemoPanel();
+    return;
+  }
+  _memoPanelOpen = !_memoPanelOpen;
+  const desk = document.getElementById('memoSidePanel');
+  if (desk) desk.style.display = _memoPanelOpen ? 'block' : 'none';
+  if (_memoPanelOpen) renderMemoSidePanel();
+}
+
+function openMemoPanel(focusSection) {
+  // 데스크톱: 패널 펼치기. 모바일: 바텀시트 오픈
+  if (_isDeskViewport()) {
+    _memoPanelOpen = true;
+    const desk = document.getElementById('memoSidePanel');
+    if (desk) desk.style.display = 'block';
+    renderMemoSidePanel();
+  } else {
+    const overlay = document.getElementById('memoBottomSheetOverlay');
+    const sheet = document.getElementById('memoBottomSheet');
+    if (overlay) overlay.classList.remove('hidden');
+    if (sheet) sheet.classList.remove('hidden');
+    const body = document.getElementById('memoBottomSheetBody');
+    if (body) body.innerHTML = _renderMemoPanelInner();
+  }
+}
+function closeMemoPanel() {
+  const overlay = document.getElementById('memoBottomSheetOverlay');
+  const sheet = document.getElementById('memoBottomSheet');
+  if (overlay) overlay.classList.add('hidden');
+  if (sheet) sheet.classList.add('hidden');
+}
+
+// 빠른 작성 액션 (Phase 4 패널)
+// v19.11.1: _memoQuickDraft를 절대 재할당하지 말 것 (window 노출 참조와 분리되면 inline oninput이 옛 객체에 mutate되어 빈 값으로 저장 시도됨)
+function onMemoQuickOpen() { _memoQuickDraft.open = true; renderMemoSidePanel(); }
+function onMemoQuickCancel() {
+  _memoQuickDraft.type = 'note';
+  _memoQuickDraft.visibility = 'public';
+  _memoQuickDraft.text = '';
+  _memoQuickDraft.items = [];
+  _memoQuickDraft.title = '';
+  _memoQuickDraft.open = false;
+  renderMemoSidePanel();
+}
+function onMemoQuickType(t) { _memoQuickDraft.type = t; if (t === 'checklist') _memoQuickDraft.visibility = 'private'; renderMemoSidePanel(); }
+function onMemoQuickVisibility(v) { if (_memoQuickDraft.type === 'checklist') return; _memoQuickDraft.visibility = v; renderMemoSidePanel(); }
+function onMemoQuickAddItem() { _memoQuickDraft.items.push({ text: '' }); renderMemoSidePanel(); }
+function onMemoQuickRemoveItem(i) { _memoQuickDraft.items.splice(i, 1); renderMemoSidePanel(); }
+function onMemoQuickSave() {
+  const { year, station, scopeType } = _phase4Scope();
+  if (!station) { showToast('지점을 선택하세요.', 'error'); return; }
+  const qd = _memoQuickDraft;
+  const memo = { year, station, scopeType, type: qd.type, visibility: qd.visibility };
+  if (qd.type === 'note') memo.content = qd.text;
+  else { memo.title = qd.title || '체크리스트'; memo.items = (qd.items || []).map(it => ({ id: makeCheckItemId(), text: it.text, checked: false })); }
+  const saved = saveMemo(memo);
+  if (saved) {
+    showToast('저장되었습니다.', 'success');
+    onMemoQuickCancel();
+  }
+}
+
+// =============================================================================
+// v19.11.0: Station Detail 메모 카드
+// =============================================================================
+let _sdMemoFilter = 'all'; // 'all' | 'public' | 'mine_checklist' | 'mine_note'
+let _sdMemoExpanded = false;
+function renderStationMemoCard() {
+  const el = document.getElementById('sdMemoCardArea');
+  if (!el) return;
+  if (!stationDetailYear || !stationDetailStation) { el.innerHTML = ''; return; }
+  const memos = listMemosVisibleToMe(stationDetailYear, stationDetailStation);
+  let filtered = memos.slice();
+  if (_sdMemoFilter === 'public') filtered = filtered.filter(m => m.visibility === 'public');
+  else if (_sdMemoFilter === 'mine_checklist') filtered = filtered.filter(m => m.type === 'checklist' && currentUser && m.authorEmpNo === currentUser.empNo);
+  else if (_sdMemoFilter === 'mine_note') filtered = filtered.filter(m => m.type === 'note' && m.visibility === 'private' && currentUser && m.authorEmpNo === currentUser.empNo);
+
+  const top = _sdMemoExpanded ? filtered : filtered.slice(0, 6);
+
+  let html = '';
+  html += `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">`;
+  const filters = [['all','전체'],['public','공유'],['mine_checklist','내 체크리스트'],['mine_note','내 메모']];
+  filters.forEach(([k, label]) => {
+    html += `<button onclick="setSDMemoFilter('${k}')" class="pill-btn ${_sdMemoFilter===k?'pill-btn-primary':'pill-btn-outline'}" style="font-size:12px;padding:5px 12px;">${label}</button>`;
+  });
+  html += `</div>`;
+  if (filtered.length === 0) {
+    html += `<div style="text-align:center;color:#9EA2A1;font-size:13px;padding:20px;">메모가 없습니다.</div>`;
+  } else {
+    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">`;
+    html += top.map(m => _renderMemoCard(m, { showScope: false })).join('');
+    html += `</div>`;
+    if (filtered.length > 6) {
+      html += `<div style="text-align:center;margin-top:10px;"><button onclick="toggleSDMemoExpanded()" class="pill-btn pill-btn-outline" style="font-size:12px;">${_sdMemoExpanded?'접기':'더 보기 ('+(filtered.length-6)+')'}</button></div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+function refreshStationMemoCard() {
+  // 동기 리스너에서 호출
+  const el = document.getElementById('sdMemoCardArea');
+  if (el && stationDetailYear && stationDetailStation) renderStationMemoCard();
+}
+function setSDMemoFilter(k) { _sdMemoFilter = k; renderStationMemoCard(); }
+function toggleSDMemoExpanded() { _sdMemoExpanded = !_sdMemoExpanded; renderStationMemoCard(); }
+function onSDMemoOpenWorkspace() {
+  // 메모 작업창에서 현재 지점·연도가 미리 채워지도록
+  if (stationDetailYear && stationDetailStation) {
+    memoWorkspaceState.draftYear = stationDetailYear;
+    memoWorkspaceState.draftStation = stationDetailStation;
+    memoWorkspaceState.filterYear = String(stationDetailYear);
+    memoWorkspaceState.filterStation = stationDetailStation;
+  }
+  switchTab(7);
+}
+
+// onMemoDraftSave에서 _editingId가 있으면 그 id로 갱신되도록 보강
+const _origMemoDraftSave = onMemoDraftSave;
+onMemoDraftSave = function() {
+  const s = memoWorkspaceState;
+  if (!s.draftStation) { showToast('대상을 선택해주세요.', 'error'); return; }
+  const memo = {
+    year: parseInt(s.draftYear),
+    scopeType: s.draftScopeType,
+    station: s.draftStation,
+    type: s.draftType,
+    visibility: s.draftVisibility
+  };
+  if (s._editingId) memo.id = s._editingId;
+  if (s.draftType === 'note') memo.content = s.draftContent;
+  else { memo.title = s.draftTitle; memo.items = s.draftItems.map(it => ({ id: it.originalId || makeCheckItemId(), text: it.text, checked: !!it.checked })); }
+  const saved = saveMemo(memo);
+  if (saved) {
+    showToast('저장되었습니다.', 'success');
+    s._editingId = null;
+    onMemoDraftReset();
+  }
+};
+
 function toggleCarEdit() {
   const chartArea = document.getElementById('sdCarChartArea');
   const editArea = document.getElementById('sdCarEditArea');
@@ -12155,6 +13079,7 @@ function renderStationDetail(year, station) {
   renderSDRadarChart(d);
   renderSDDoughnutChart(d);
   renderSDCategoryTable(d);
+  // v19.11.1: Station Detail 메모 카드 제거 (Phase 2 하단으로 이동)
 }
 
 // --- Charts ---
@@ -12524,7 +13449,24 @@ Object.assign(window, {
   renderOutsourcingStats, renderAuditorStats, renderOutsourcingAnalysis, toggleSection,
   // Utility exposed
   Scoring, ChartUtil, SafeStorage, CONFIG,
+  // v19.11.0: 메모/체크리스트
+  loadMemos, loadAllMemos, saveMemo, deleteMemo, toggleChecklistItem,
+  listMemosVisibleToMe, listAllMemosVisibleToMe, getMyChecklistProgress,
+  renderMemoWorkspace, renderMemoSidePanel, renderStationMemoCard, refreshStationMemoCard,
+  toggleMemoPanel, openMemoPanel, closeMemoPanel, showMemoPanelControls, updateMemoBadge,
+  onMemoDraftType, onMemoDraftVisibility, onMemoDraftScopeType,
+  onMemoDraftAddItem, onMemoDraftRemoveItem, onMemoDraftReset, onMemoDraftSave,
+  onMemoDelete, onMemoChecklistToggle, onMemoEdit,
+  onMemoQuickOpen, onMemoQuickCancel, onMemoQuickType, onMemoQuickVisibility,
+  onMemoQuickAddItem, onMemoQuickRemoveItem, onMemoQuickSave,
+  onSDMemoOpenWorkspace, onHomeMemoQuickAdd,
+  setSDMemoFilter, toggleSDMemoExpanded,
 });
+// v19.11.0: state도 노출 (oninput에서 직접 mutate)
+window.memoWorkspaceState = (typeof memoWorkspaceState !== 'undefined') ? memoWorkspaceState : null;
+window._memoQuickDraft = (typeof _memoQuickDraft !== 'undefined') ? _memoQuickDraft : null;
+window._sdMemoFilter = (typeof _sdMemoFilter !== 'undefined') ? _sdMemoFilter : 'all';
+window._sdMemoExpanded = (typeof _sdMemoExpanded !== 'undefined') ? _sdMemoExpanded : false;
 
 })(); // end IIFE
 </script>
