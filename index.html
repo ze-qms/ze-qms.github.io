@@ -1465,7 +1465,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.9</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.10</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1631,7 +1631,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.11.9',
+  version: '19.11.10',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -11729,7 +11729,9 @@ function deleteMemo(year, station, memoId) {
   const key = year + '_' + station;
   const memo = all[key] && all[key][memoId];
   if (!memo) { showToast('메모를 찾을 수 없습니다.', 'error'); return false; }
-  const isMine = currentUser && memo.authorEmpNo === currentUser.empNo;
+  // v19.11.10: legacy author 누락 메모 — 본인이 정리 가능
+  const isOrphan = !memo.authorEmpNo;
+  const isMine = currentUser && (memo.authorEmpNo === currentUser.empNo || isOrphan);
   const canModerate = currentUser && currentUser.role === 'admin' && memo.visibility === 'public';
   if (!isMine && !canModerate) { showToast('삭제 권한이 없습니다.', 'error'); return false; }
 
@@ -11784,6 +11786,8 @@ function toggleChecklistItem(year, station, memoId, itemId) {
 
 function _memoVisibleToMe(memo) {
   if (!memo) return false;
+  // v19.11.10: legacy author 누락 메모는 모든 로그인 사용자에게 보이게 (복구 가능하도록)
+  if (!memo.authorEmpNo) return !!currentUser;
   if (memo.visibility === 'public') return true;
   // private — 본인만
   return !!(currentUser && memo.authorEmpNo === currentUser.empNo);
@@ -11886,7 +11890,9 @@ function _memoStationOptionsHTML(scopeType, currentVal) {
 
 function _renderMemoCard(memo, opts) {
   opts = opts || {};
-  const isMine = currentUser && memo.authorEmpNo === currentUser.empNo;
+  // v19.11.10: legacy author 누락 메모 — 본인이 클레임 가능하도록 isMine=true 처리
+  const isOrphan = !memo.authorEmpNo;
+  const isMine = currentUser && (memo.authorEmpNo === currentUser.empNo || isOrphan);
   const canDelete = isMine || (currentUser && currentUser.role === 'admin' && memo.visibility === 'public');
   // v19.11.3: Notion 스타일 — 폰트 키움, 메타 13px, 본문 16px, 패딩 18px
   const visBadge = memo.visibility === 'public'
