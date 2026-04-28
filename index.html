@@ -970,8 +970,7 @@ select.apple-input {
         <div class="flex items-center gap-3 flex-wrap">
           <span id="phase4TypeBadge" class="badge-pill" style="background:#D20015;color:#fff;font-size:13px;padding:4px 14px;"></span>
           <span id="phase4MaturityToggle" style="font-size:12px;color:#6E7273;cursor:pointer;display:none;" onclick="document.getElementById('maturityHeaderPanel').classList.toggle('hidden')">▶ 성숙도 기준 보기</span>
-          <!-- v19.11.0: 사전 체크 미완료 배지 + 메모 패널 토글 -->
-          <span id="memoChecklistBadge" onclick="openMemoPanel('checklist')" class="badge-pill" style="display:none;cursor:pointer;font-size:12px;padding:4px 12px;font-weight:600;"></span>
+          <!-- v19.11.11: 사전 체크 배지 제거 (요청) — 메모 패널 토글만 유지 -->
           <button id="memoPanelToggleDesktop" onclick="toggleMemoPanel()" class="hidden md:inline-flex" style="background:rgba(0,103,196,0.1);color:#0067C4;border:none;border-radius:980px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;align-items:center;gap:4px;">📋 메모/체크리스트</button>
         </div>
         <div id="phase4CompanyInfo" style="font-size:14px;color:#565A5B;margin-top:4px;"></div>
@@ -1465,7 +1464,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.10</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.11</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1631,7 +1630,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.11.10',
+  version: '19.11.11',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
