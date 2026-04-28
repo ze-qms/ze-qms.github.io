@@ -1465,7 +1465,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.8</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.9</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1631,7 +1631,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.11.8',
+  version: '19.11.9',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -11667,6 +11667,27 @@ function saveMemo(memoInput) {
     memo.createdAt = now;
     memo.authorEmpNo = currentUser.empNo;
     memo.authorName = currentUser.name || currentUser.empNo;
+  } else {
+    // v19.11.9: 수정 모드 — 기존 메모의 author/createdAt 보존 (없으면 Firebase 저장 시 사라져 권한 박탈 발생)
+    const allLocal = SafeStorage.get(MEMO_STORAGE_KEY, {});
+    const existing = (allLocal[memo.year + '_' + memo.station] || {})[memo.id];
+    if (existing) {
+      memo.authorEmpNo = memo.authorEmpNo || existing.authorEmpNo;
+      memo.authorName = memo.authorName || existing.authorName;
+      memo.createdAt = memo.createdAt || existing.createdAt || now;
+      // 권한 체크: 본인 메모만 수정 가능 (admin은 public 메모 수정 가능)
+      const isMine = existing.authorEmpNo === currentUser.empNo;
+      const canModerate = currentUser.role === 'admin' && existing.visibility === 'public';
+      if (!isMine && !canModerate) {
+        showToast('수정 권한이 없습니다.', 'error');
+        return null;
+      }
+    } else {
+      // legacy/유실된 메모 — author 정보 본인으로 클레임 (소유자 없는 데이터)
+      memo.authorEmpNo = memo.authorEmpNo || currentUser.empNo;
+      memo.authorName = memo.authorName || currentUser.name || currentUser.empNo;
+      memo.createdAt = memo.createdAt || now;
+    }
   }
   memo.updatedAt = now;
 
@@ -11728,8 +11749,12 @@ function toggleChecklistItem(year, station, memoId, itemId) {
   const key = year + '_' + station;
   const memo = all[key] && all[key][memoId];
   if (!memo || memo.type !== 'checklist') return false;
-  // 본인 체크리스트만 (private 강제이므로 본인 외 보일 일이 없지만 방어)
-  if (!currentUser || memo.authorEmpNo !== currentUser.empNo) {
+  if (!currentUser) { showToast('로그인이 필요합니다.', 'error'); return false; }
+  // v19.11.9: author 없는 legacy 메모는 첫 토글 시 본인이 클레임 (이전 버전 버그 복구용)
+  if (!memo.authorEmpNo) {
+    memo.authorEmpNo = currentUser.empNo;
+    memo.authorName = currentUser.name || currentUser.empNo;
+  } else if (memo.authorEmpNo !== currentUser.empNo) {
     showToast('체크 권한이 없습니다.', 'error'); return false;
   }
   const idx = memo.items.findIndex(it => it.id === itemId);
@@ -11747,6 +11772,11 @@ function toggleChecklistItem(year, station, memoId, itemId) {
       ref.child('items/' + idx + '/checked').set(memo.items[idx].checked);
       ref.child('items/' + idx + '/checkedAt').set(memo.items[idx].checkedAt);
       ref.child('updatedAt').set(memo.updatedAt);
+      // legacy 메모 클레임 시 author도 동기화
+      if (memo.authorEmpNo) {
+        ref.child('authorEmpNo').set(memo.authorEmpNo);
+        ref.child('authorName').set(memo.authorName);
+      }
     }
   }
   return memo.items[idx].checked;
@@ -12072,6 +12102,8 @@ function onMemoDraftReset() {
   memoWorkspaceState.draftContent = '';
   memoWorkspaceState.draftTitle = '';
   memoWorkspaceState.draftItems = [];
+  // v19.11.9: 수정 모드 잔재 제거 — cancel 후 신규 메모 작성 시 잘못된 ID로 갱신되는 것 방지
+  memoWorkspaceState._editingId = null;
   renderMemoWorkspace();
 }
 function onMemoDraftSave() {
