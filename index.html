@@ -694,8 +694,11 @@ select.apple-input {
 </head>
 <body class="min-h-screen flex flex-col" style="background:#f9f9fb;">
 
-<!-- Toast Container -->
-<div id="toastContainer" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2"></div>
+<!-- Toast Container — v19.14.1: 모바일은 상단 중앙, 데스크톱은 우상단 -->
+<div id="toastContainer" class="fixed z-[9999] flex flex-col gap-2 items-center md:items-end" style="top:max(env(safe-area-inset-top),12px);left:50%;right:auto;transform:translateX(-50%);"></div>
+<style>
+  @media (min-width:768px){#toastContainer{left:auto;right:16px;transform:none;}}
+</style>
 
 <!-- Loading Overlay -->
 <div id="loadingOverlay" class="fixed inset-0 bg-black/30 z-[9998] hidden flex items-center justify-center">
@@ -1451,7 +1454,7 @@ select.apple-input {
     <!-- v19.14.0: 백업 관리 -->
     <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#22C55E;margin-bottom:8px;margin-top:20px;padding-left:4px;">데이터 백업</div>
     <div class="apple-card p-6 mb-5" id="mgmt_backup_card">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_backup'); if(!document.getElementById('mgmt_backup').classList.contains('hidden')) refreshBackupList();">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleBackupSection()">
         <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">Firebase 데이터 백업</h3>
         <span id="mgmt_backupArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
       </div>
@@ -1490,7 +1493,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1605,7 +1608,7 @@ select.apple-input {
 </main>
 
 <!-- v19.11.0: Phase 4 모바일 FAB + 바텀시트 -->
-<button id="memoFab" onclick="openMemoPanel()" class="md:hidden" style="display:none;position:fixed;right:14px;bottom:96px;width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0067C4 0%,#0050a0 100%);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,103,196,0.4);font-size:18px;cursor:pointer;z-index:45;align-items:center;justify-content:center;">
+<button id="memoFab" onclick="openMemoPanel()" class="md:hidden" style="display:none;position:fixed;right:16px;bottom:calc(144px + env(safe-area-inset-bottom));width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0067C4 0%,#0050a0 100%);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,103,196,0.4);font-size:18px;cursor:pointer;z-index:45;align-items:center;justify-content:center;">
   📋
   <span id="memoFabBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#D20015;color:#fff;border-radius:980px;font-size:11px;font-weight:700;min-width:20px;height:20px;padding:0 6px;line-height:20px;border:2px solid #fff;"></span>
 </button>
@@ -1656,7 +1659,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.14.0',
+  version: '19.14.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3631,6 +3634,20 @@ async function maybeAutoBackup() {
   }
 }
 
+// v19.14.1: 백업 카드 토글 — onclick inline 표현식 안정화
+function toggleBackupSection() {
+  const el = document.getElementById('mgmt_backup');
+  const arrow = document.getElementById('mgmt_backupArrow');
+  if (!el) return;
+  const wasHidden = el.classList.contains('hidden');
+  el.classList.toggle('hidden');
+  if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▸' : '▾';
+  // 펼쳐질 때만 목록 자동 로드
+  if (wasHidden) {
+    try { refreshBackupList(); } catch(e) { console.warn('refreshBackupList failed:', e); }
+  }
+}
+
 // UI handlers
 async function manualBackup() {
   if (!currentUser || currentUser.role !== 'admin') { showToast('관리자 전용', 'error'); return; }
@@ -3830,16 +3847,16 @@ async function onLoginSuccess() {
   switchTab(0);
 
   // 2) Firebase에서 최신 데이터 fetch (background) → 화면 자동 갱신
-  try { showToast('최신 데이터 가져오는 중...', 'info'); } catch(e) {}
+  // v19.14.1: toast 메시지 단축 (모바일 가독성)
   const fetchResult = await loadFreshDataFromFirebase();
   if (fetchResult.ok) {
     try { refreshCurrentView(); } catch(e) { console.warn('refresh after fetch failed:', e); }
     try {
       const c = fetchResult.counts;
-      showToast('데이터 동기화 완료 (심사 ' + c.assessments + '건 · 심사원 ' + c.auditors + '명 · 일정 ' + c.schedule + '건)', 'success');
+      showToast('동기화 완료 · 심사 ' + c.assessments + ' · 일정 ' + c.schedule, 'success');
     } catch(e) {}
   } else {
-    try { showToast('Firebase 동기화 실패 — 로컬 캐시로 표시 중. 새로고침 권장. (' + fetchResult.reason + ')', 'error'); } catch(e) {}
+    try { showToast('Firebase 동기화 실패 — 로컬 캐시 표시 중', 'error'); } catch(e) {}
   }
 
   // v19.1: CAR 데이터 Firebase 동기화
@@ -4238,7 +4255,13 @@ function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
   toast.className = 'toast';
-  toast.style.cssText = `background:${colors[type] || colors.info};color:#fff;padding:10px 20px;border-radius:980px;font-size:14px;font-weight:400;letter-spacing:-0.224px;max-width:320px;`;
+  // v19.14.1: 모바일 가독성 — 데스크톱 14px / 모바일 13px, padding 축소
+  const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+  const fontSize = isMobile ? 13 : 14;
+  const padV = isMobile ? 8 : 10;
+  const padH = isMobile ? 14 : 20;
+  const maxW = isMobile ? 260 : 320;
+  toast.style.cssText = `background:${colors[type] || colors.info};color:#fff;padding:${padV}px ${padH}px;border-radius:980px;font-size:${fontSize}px;font-weight:400;letter-spacing:-0.224px;max-width:${maxW}px;line-height:1.35;`;
   toast.textContent = message;
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
@@ -14151,7 +14174,7 @@ window._sdMemoExpanded = (typeof _sdMemoExpanded !== 'undefined') ? _sdMemoExpan
 })(); // end IIFE
 </script>
 <!-- FAB: Scroll to Top -->
-<button id="fabScrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" style="display:none;position:fixed;bottom:80px;right:16px;z-index:999;width:44px;height:44px;border-radius:50%;background:#D20015;color:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;font-size:18px;line-height:44px;text-align:center;transition:opacity 0.2s;">&#8593;</button>
+<button id="fabScrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" style="display:none;position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));right:16px;z-index:44;width:44px;height:44px;border-radius:50%;background:#D20015;color:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;font-size:18px;line-height:44px;text-align:center;transition:opacity 0.2s;">&#8593;</button>
 
 <!-- Analysis Modal Overlay -->
 <div id="analysisModalOverlay" class="analysis-modal-overlay" onclick="if(event.target===this)closeAnalysisModal()">
