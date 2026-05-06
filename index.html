@@ -1464,7 +1464,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.11</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.12</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1630,7 +1630,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.11.11',
+  version: '19.11.12',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3164,6 +3164,7 @@ let firebaseAuth = null;
 let firebaseConnected = false;
 let currentUser = null;  // { uid, empNo, name, role }
 let _suppressAuthRedirect = false; // 사용자 생성 중 onAuthStateChanged 리디렉트 방지
+let _listenersAttached = false;    // v19.11.12: setupFirebaseListeners 중복 등록 방지
 const AUTH_DOMAIN = '@eastar.local';
 
 function empNoToEmail(empNo) { return empNo + AUTH_DOMAIN; }
@@ -3190,8 +3191,13 @@ async function initFirebase() {
 
     // 연결 상태 모니터링
     firebase.database().ref('.info/connected').on('value', (snap) => {
+      const wasConnected = firebaseConnected;
       firebaseConnected = snap.val() === true;
       updateSyncStatus();
+      // v19.11.12: 재연결 시 미동기화 메모 자동 retry
+      if (!wasConnected && firebaseConnected && currentUser) {
+        try { retryUnsyncedMemos(); } catch(e) { console.warn('retryUnsyncedMemos failed:', e); }
+      }
     });
 
     // Auth 상태 변경 리스너
@@ -3232,6 +3238,12 @@ async function initFirebase() {
         if (userData) {
           currentUser = { uid: user.uid, empNo: emailToEmpNo(user.email), name: userData.name, role: userData.role };
           window._myAuditorProfile = undefined; // v17.2.0: 캐시 초기화
+          // v19.11.12: auth 성공 후 listener 등록 (이전엔 init 시점에 등록되어 auth=null로 cancel됨)
+          if (!_listenersAttached) {
+            try { setupFirebaseListeners(); _listenersAttached = true; } catch(e) { console.warn('setupFirebaseListeners failed:', e); }
+          }
+          // v19.11.12: 로그인 즉시 미동기화 메모 retry
+          try { retryUnsyncedMemos(); } catch(e) {}
           if (userData.mustChangePassword) {
             showForcePasswordChange();
           } else {
@@ -3256,7 +3268,7 @@ async function initFirebase() {
       }
     });
 
-    setupFirebaseListeners();
+    // v19.11.12: setupFirebaseListeners()는 onAuthStateChanged 핸들러 안에서 호출됨
     console.log('Firebase connected');
   } catch(e) {
     console.warn('Firebase init failed:', e);
@@ -9903,7 +9915,7 @@ function removeAuditorTag(containerId, name) {
 // FIREBASE REAL-TIME SYNC
 // ============================================================================
 // Firebase 첫 수신 플래그 — 첫 연결 시 Firebase 데이터를 무조건 우선 (로컬 캐시보다 신뢰)
-let _fbFirstSync = { assessments: false, auditors: false, schedule: false, customStations: false };
+let _fbFirstSync = { assessments: false, auditors: false, schedule: false, customStations: false, memos: false };
 
 function setupFirebaseListeners() {
   if (!firebaseDb) return;
@@ -10004,10 +10016,13 @@ function setupFirebaseListeners() {
   });
 
   // v19.11.0: Memo 실시간 동기화 — { year: { stationKey: { memoId: memo } } }
+  // v19.11.12: 첫 fire는 union (RTDB ∪ local), 이후는 통째 교체 + _unsynced 메모 항상 보호
   dbRef('memos').on('value', (snapshot) => {
     const data = snapshot.val();
     const local = SafeStorage.get(MEMO_STORAGE_KEY, {});
-    const newLocal = {};
+    const isFirst = !_fbFirstSync.memos;
+    _fbFirstSync.memos = true;
+    const fromRemote = {};
     if (data) {
       for (const [yr, byStation] of Object.entries(data)) {
         for (const [stKey, byId] of Object.entries(byStation || {})) {
@@ -10015,12 +10030,41 @@ function setupFirebaseListeners() {
           for (const memo of Object.values(byId || {})) {
             if (!memo || !memo.year || !memo.station || !memo.id) continue;
             const key = memo.year + '_' + memo.station;
-            if (!newLocal[key]) newLocal[key] = {};
+            if (!fromRemote[key]) fromRemote[key] = {};
             // items가 배열이 아닌 sparse 객체로 들어올 수 있음 — 정규화
             if (memo.type === 'checklist' && memo.items && !Array.isArray(memo.items)) {
               memo.items = Object.keys(memo.items).sort((a,b)=>+a-+b).map(k => memo.items[k]);
             }
-            newLocal[key][memo.id] = memo;
+            fromRemote[key][memo.id] = memo;
+          }
+        }
+      }
+    }
+    // v19.11.12: union 정책
+    //  - 첫 fire: local의 모든 메모 보존 + remote 머지 (덮어쓰기로 미동기화 메모가 사라지지 않게)
+    //  - 이후 fire: remote 기준으로 교체하되, _unsynced 메모는 보존 (아직 RTDB에 못 올린 것)
+    const newLocal = {};
+    if (isFirst) {
+      // local 먼저 복사
+      for (const [k, byId] of Object.entries(local || {})) {
+        newLocal[k] = Object.assign({}, byId || {});
+      }
+      // remote가 우선 (동일 id면 덮어쓰기 — RTDB가 source of truth)
+      for (const [k, byId] of Object.entries(fromRemote)) {
+        if (!newLocal[k]) newLocal[k] = {};
+        for (const [id, memo] of Object.entries(byId)) newLocal[k][id] = memo;
+      }
+    } else {
+      // remote 기준
+      for (const [k, byId] of Object.entries(fromRemote)) {
+        newLocal[k] = Object.assign({}, byId);
+      }
+      // _unsynced는 무조건 보존
+      for (const [k, byId] of Object.entries(local || {})) {
+        for (const [id, memo] of Object.entries(byId || {})) {
+          if (memo && memo._unsynced) {
+            if (!newLocal[k]) newLocal[k] = {};
+            newLocal[k][id] = memo;
           }
         }
       }
@@ -10033,6 +10077,11 @@ function setupFirebaseListeners() {
         if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 4 || inputPhase === 2)) renderMemoSidePanel();
       } catch(e) {}
     }
+  }, (err) => {
+    // v19.11.12: cancelCallback — auth 거부/끊김 등으로 listener가 cancel될 때
+    console.warn('Memo listener cancelled:', err && err.code, err && err.message);
+    _fbFirstSync.memos = false;
+    _listenersAttached = false; // 다음 auth 변화 시 재등록 가능하도록
   });
 
   // Listen for custom stations — Firebase 우선
@@ -11709,6 +11758,8 @@ function saveMemo(memoInput) {
     delete memo.content;
   }
 
+  // v19.11.12: 우선 _unsynced=true로 저장. RTDB write 성공하면 마킹 제거
+  memo._unsynced = true;
   _setMemoLocal(memo.year, memo.station, memo.id, memo);
 
   // Firebase 동기화
@@ -11716,10 +11767,65 @@ function saveMemo(memoInput) {
     const stKey = _memoStationKey(memo.station);
     const ref = dbRef('memos/' + memo.year + '/' + stKey);
     if (ref) {
-      ref.child(memo.id).set(memo).catch(e => console.warn('Memo Firebase save failed:', e));
+      const cleanMemo = Object.assign({}, memo);
+      delete cleanMemo._unsynced; // RTDB에는 마킹 필드 안 보냄
+      ref.child(memo.id).set(cleanMemo)
+        .then(() => {
+          // 성공 — _unsynced 제거 후 다시 저장
+          delete memo._unsynced;
+          _setMemoLocal(memo.year, memo.station, memo.id, memo);
+          try {
+            if (typeof renderMemoWorkspace === 'function' && activeTab === 7) renderMemoWorkspace();
+            if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 4 || inputPhase === 2)) renderMemoSidePanel();
+          } catch(e) {}
+        })
+        .catch(e => {
+          console.warn('Memo Firebase save failed (will retry):', e && (e.code || e.message));
+          // _unsynced 유지 — retryUnsyncedMemos가 처리
+        });
     }
   }
   return memo;
+}
+
+// v19.11.12: 미동기화 메모를 다시 RTDB에 push 시도
+function retryUnsyncedMemos() {
+  if (!firebaseDb || !currentUser) return;
+  const all = SafeStorage.get(MEMO_STORAGE_KEY, {});
+  const tasks = [];
+  Object.entries(all).forEach(([yearStation, byId]) => {
+    Object.entries(byId || {}).forEach(([id, memo]) => {
+      if (!memo || !memo._unsynced) return;
+      // 삭제 마킹된 메모는 별도 처리 (현재는 직접 삭제 path만)
+      if (memo._pendingDelete) {
+        const stKey = _memoStationKey(memo.station);
+        const ref = dbRef('memos/' + memo.year + '/' + stKey);
+        if (!ref) return;
+        tasks.push(ref.child(memo.id).remove()
+          .then(() => { _setMemoLocal(memo.year, memo.station, memo.id, null); })
+          .catch(e => console.warn('Retry delete failed:', memo.id, e && e.code)));
+        return;
+      }
+      const stKey = _memoStationKey(memo.station);
+      const ref = dbRef('memos/' + memo.year + '/' + stKey);
+      if (!ref) return;
+      const clean = Object.assign({}, memo);
+      delete clean._unsynced;
+      tasks.push(ref.child(memo.id).set(clean)
+        .then(() => {
+          delete memo._unsynced;
+          _setMemoLocal(memo.year, memo.station, memo.id, memo);
+        })
+        .catch(e => console.warn('Retry save failed:', memo.id, e && e.code)));
+    });
+  });
+  if (tasks.length === 0) return;
+  Promise.allSettled(tasks).then(() => {
+    try {
+      if (typeof renderMemoWorkspace === 'function' && activeTab === 7) renderMemoWorkspace();
+      if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 4 || inputPhase === 2)) renderMemoSidePanel();
+    } catch(e) {}
+  });
 }
 
 function deleteMemo(year, station, memoId) {
@@ -11734,13 +11840,31 @@ function deleteMemo(year, station, memoId) {
   const canModerate = currentUser && currentUser.role === 'admin' && memo.visibility === 'public';
   if (!isMine && !canModerate) { showToast('삭제 권한이 없습니다.', 'error'); return false; }
 
-  _setMemoLocal(year, station, memoId, null);
-
+  // v19.11.12: RTDB delete 성공 전엔 _pendingDelete 마킹으로 보존. 성공 시 완전 제거.
   if (firebaseDb) {
     const stKey = _memoStationKey(station);
     const ref = dbRef('memos/' + year + '/' + stKey);
-    if (ref) ref.child(memoId).remove().catch(e => console.warn('Memo Firebase delete failed:', e));
+    if (ref) {
+      ref.child(memoId).remove()
+        .then(() => {
+          _setMemoLocal(year, station, memoId, null);
+          try {
+            if (typeof renderMemoWorkspace === 'function' && activeTab === 7) renderMemoWorkspace();
+            if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 4 || inputPhase === 2)) renderMemoSidePanel();
+          } catch(e) {}
+        })
+        .catch(e => {
+          console.warn('Memo Firebase delete failed (queued for retry):', e && (e.code || e.message));
+          // 메모를 _pendingDelete 마킹으로 보존 — retry가 다시 시도
+          memo._unsynced = true;
+          memo._pendingDelete = true;
+          _setMemoLocal(year, station, memoId, memo);
+        });
+      return true;
+    }
   }
+  // firebaseDb 없으면 즉시 로컬 삭제 (오프라인)
+  _setMemoLocal(year, station, memoId, null);
   return true;
 }
 
@@ -11764,20 +11888,32 @@ function toggleChecklistItem(year, station, memoId, itemId) {
   memo.items[idx].checkedAt = memo.items[idx].checked ? new Date().toISOString() : null;
   memo.updatedAt = new Date().toISOString();
 
+  // v19.11.12: 토글 시 RTDB write 실패 가능성 — _unsynced 마킹으로 retry 큐 합류
+  memo._unsynced = true;
   _setMemoLocal(year, station, memoId, memo);
 
   if (firebaseDb) {
     const stKey = _memoStationKey(station);
     const ref = dbRef('memos/' + year + '/' + stKey + '/' + memoId);
     if (ref) {
-      ref.child('items/' + idx + '/checked').set(memo.items[idx].checked);
-      ref.child('items/' + idx + '/checkedAt').set(memo.items[idx].checkedAt);
-      ref.child('updatedAt').set(memo.updatedAt);
-      // legacy 메모 클레임 시 author도 동기화
+      // 부분 update — 성공하면 메모 전체에서 _unsynced 제거 (전체를 다시 set)
+      const updates = {};
+      updates['items/' + idx + '/checked'] = memo.items[idx].checked;
+      updates['items/' + idx + '/checkedAt'] = memo.items[idx].checkedAt;
+      updates['updatedAt'] = memo.updatedAt;
       if (memo.authorEmpNo) {
-        ref.child('authorEmpNo').set(memo.authorEmpNo);
-        ref.child('authorName').set(memo.authorName);
+        updates['authorEmpNo'] = memo.authorEmpNo;
+        updates['authorName'] = memo.authorName;
       }
+      ref.update(updates)
+        .then(() => {
+          delete memo._unsynced;
+          _setMemoLocal(year, station, memoId, memo);
+        })
+        .catch(e => {
+          console.warn('Checklist toggle RTDB failed (queued):', e && (e.code || e.message));
+          // _unsynced 유지. retry 시 saveMemo path로 전체 set이 시도됨.
+        });
     }
   }
   return memo.items[idx].checked;
@@ -11900,6 +12036,10 @@ function _renderMemoCard(memo, opts) {
   const typeBadge = memo.type === 'checklist'
     ? '<span class="badge-pill" style="background:rgba(210,0,21,0.12);color:#D20015;font-size:12px;font-weight:600;padding:3px 10px;">☑ 체크리스트</span>'
     : '<span class="badge-pill" style="background:rgba(34,197,94,0.12);color:#22C55E;font-size:12px;font-weight:600;padding:3px 10px;">📝 메모</span>';
+  // v19.11.12: 동기화 보류 표시
+  const syncBadge = memo._unsynced
+    ? '<span class="badge-pill" title="이 메모는 아직 서버에 동기화되지 않았습니다. 연결이 복구되면 자동으로 다시 시도됩니다." style="background:rgba(245,158,11,0.18);color:#B45309;font-size:12px;font-weight:600;padding:3px 10px;">⟳ 동기화 보류</span>'
+    : '';
 
   let body = '';
   if (memo.type === 'note') {
@@ -11937,7 +12077,7 @@ function _renderMemoCard(memo, opts) {
   return `<div class="apple-card" style="padding:18px 20px;border-left:4px solid ${memo.visibility==='public'?'#0067C4':(memo.type==='checklist'?'#D20015':'#9EA2A1')};transition:box-shadow 0.15s;" onmouseover="this.style.boxShadow='rgba(0,0,0,0.1) 0px 4px 14px 0px'" onmouseout="this.style.boxShadow='none'">
     ${scopeLine}
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
-      ${typeBadge}${visBadge}
+      ${typeBadge}${visBadge}${syncBadge}
       <span style="font-size:13px;color:#9EA2A1;margin-left:auto;font-weight:500;">${_esc(memo.authorName || '')} · ${_fmtDateShort(memo.updatedAt || memo.createdAt)}</span>
     </div>
     ${body}
