@@ -1448,6 +1448,27 @@ select.apple-input {
       </div>
     </div>
 
+    <!-- v19.14.0: 백업 관리 -->
+    <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#22C55E;margin-bottom:8px;margin-top:20px;padding-left:4px;">데이터 백업</div>
+    <div class="apple-card p-6 mb-5" id="mgmt_backup_card">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_backup'); if(!document.getElementById('mgmt_backup').classList.contains('hidden')) refreshBackupList();">
+        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">Firebase 데이터 백업</h3>
+        <span id="mgmt_backupArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
+      </div>
+      <div id="mgmt_backup" class="hidden" style="margin-top:12px;">
+        <p style="font-size:13px;color:#566062;margin-bottom:12px;line-height:1.6;">
+          관리자 로그인 시 24시간마다 자동 백업됩니다.<br>
+          백업은 Firebase RTDB에 저장되며 <strong>최근 30개</strong>까지 보관 (초과분 자동 삭제).<br>
+          포함 데이터: 심사 / 심사원 / 일정 / 커스텀지점 / 메모 / CAR
+        </p>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+          <button onclick="manualBackup()" class="pill-btn" style="background:#22C55E;color:#fff;">지금 백업</button>
+          <button onclick="refreshBackupList()" class="pill-btn pill-btn-outline">목록 새로고침</button>
+        </div>
+        <div id="backupList" style="font-size:13px;"></div>
+      </div>
+    </div>
+
     <!-- 그룹: 위험 작업 -->
     <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#D20015;margin-bottom:8px;margin-top:20px;padding-left:4px;">위험 작업</div>
 
@@ -1469,7 +1490,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.13.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1635,7 +1656,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.13.0',
+  version: '19.14.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3454,18 +3475,247 @@ async function doLogout() {
   showLoginScreen();
 }
 
+// ============================================================================
+// v19.14.0: FIREBASE BACKUP SYSTEM
+// ============================================================================
+// 자동/수동 백업: Firebase RTDB의 backups/{ISO timestamp}/ path에 6개 데이터 path 스냅샷 저장.
+// 보존 정책: 최근 BACKUP_KEEP_COUNT 개. 자동 트리거: admin 로그인 시 24h 경과 후.
+const BACKUP_LAST_TIME_KEY = 'eastar_' + APP_ENV + '_last_backup_time';
+const BACKUP_KEEP_COUNT = 30;
+const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function createBackup(trigger) {
+  trigger = trigger || 'manual';
+  if (!firebaseDb) throw new Error('Firebase not initialized');
+  if (!currentUser) throw new Error('Not logged in');
+  if (currentUser.role !== 'admin') throw new Error('Admin only');
+
+  const now = new Date();
+  // ID: 2026-05-06_18-00-00Z (path-safe — Firebase가 . / # $ [ ] 못 씀)
+  const id = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19) + 'Z';
+
+  const [aSnap, auSnap, sSnap, csSnap, mSnap, cSnap] = await Promise.all([
+    dbRef('assessments').once('value'),
+    dbRef('auditors').once('value'),
+    dbRef('schedule').once('value'),
+    dbRef('customStations').once('value'),
+    dbRef('memos').once('value'),
+    dbRef('car').once('value'),
+  ]);
+
+  const cnt = (v) => v && typeof v === 'object' ? Object.keys(v).length : 0;
+  // memos는 4단계 중첩이라 leaf 개수 별도 카운트
+  let memoCnt = 0;
+  const mv = mSnap.val();
+  if (mv) for (const yr of Object.values(mv)) for (const st of Object.values(yr || {})) memoCnt += Object.keys(st || {}).length;
+
+  const backupObj = {
+    createdAt: now.toISOString(),
+    createdBy: (currentUser.empNo || '?') + ' / ' + (currentUser.name || ''),
+    trigger: trigger, // 'auto' | 'manual' | 'pre-restore'
+    appVersion: CONFIG.version,
+    counts: {
+      assessments: cnt(aSnap.val()),
+      auditors: cnt(auSnap.val()),
+      schedule: cnt(sSnap.val()),
+      customStations: cnt(csSnap.val()),
+      memos: memoCnt,
+      car: cnt(cSnap.val()),
+    },
+    data: {
+      assessments: aSnap.val() || {},
+      auditors: auSnap.val() || {},
+      schedule: sSnap.val() || {},
+      customStations: csSnap.val() || {},
+      memos: mSnap.val() || {},
+      car: cSnap.val() || {},
+    }
+  };
+
+  await dbRef('backups/' + id).set(backupObj);
+  localStorage.setItem(BACKUP_LAST_TIME_KEY, now.toISOString());
+
+  // 보존 정책 — 초과 시 oldest 자동 삭제
+  await cleanOldBackups();
+  return id;
+}
+
+async function cleanOldBackups() {
+  if (!firebaseDb) return;
+  const snap = await dbRef('backups').once('value');
+  const all = snap.val() || {};
+  const ids = Object.keys(all).sort(); // ISO 형식이라 lex 정렬 = 시간 정렬
+  if (ids.length <= BACKUP_KEEP_COUNT) return;
+  const toDelete = ids.slice(0, ids.length - BACKUP_KEEP_COUNT);
+  await Promise.all(toDelete.map(id => dbRef('backups/' + id).remove()));
+  console.log('cleanOldBackups: removed', toDelete.length, 'old backups');
+}
+
+async function listBackups() {
+  if (!firebaseDb) return [];
+  const snap = await dbRef('backups').once('value');
+  const all = snap.val() || {};
+  return Object.entries(all).map(([id, b]) => ({
+    id,
+    createdAt: b.createdAt || id,
+    createdBy: b.createdBy || '?',
+    trigger: b.trigger || 'unknown',
+    appVersion: b.appVersion || '',
+    counts: b.counts || {},
+  })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+async function restoreFromBackup(backupId) {
+  if (!firebaseDb || !currentUser) return false;
+  if (currentUser.role !== 'admin') { showToast('관리자만 복원할 수 있습니다.', 'error'); return false; }
+  const snap = await dbRef('backups/' + backupId).once('value');
+  const backup = snap.val();
+  if (!backup) { showToast('백업을 찾을 수 없습니다.', 'error'); return false; }
+
+  // 복원 전 현재 상태 자동 백업 (rollback safety)
+  showToast('복원 전 안전 백업 생성 중...', 'info');
+  try { await createBackup('pre-restore'); } catch(e) { console.warn('pre-restore backup failed:', e); }
+
+  showToast('복원 중...', 'info');
+  const data = backup.data || {};
+  await Promise.all([
+    dbRef('assessments').set(data.assessments || {}),
+    dbRef('auditors').set(data.auditors || {}),
+    dbRef('schedule').set(data.schedule || {}),
+    dbRef('customStations').set(data.customStations || {}),
+    dbRef('memos').set(data.memos || {}),
+    dbRef('car').set(data.car || {}),
+  ]);
+  showToast('복원 완료. 페이지를 새로고침합니다...', 'success');
+  setTimeout(() => location.reload(), 2000);
+  return true;
+}
+
+async function downloadBackupAsJson(backupId) {
+  if (!firebaseDb) return;
+  const snap = await dbRef('backups/' + backupId).once('value');
+  const backup = snap.val();
+  if (!backup) { showToast('백업을 찾을 수 없습니다.', 'error'); return; }
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'qms_backup_' + APP_ENV + '_' + backupId + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('백업 다운로드됨', 'success');
+}
+
+async function deleteBackup(backupId) {
+  if (!firebaseDb || !currentUser) return false;
+  if (currentUser.role !== 'admin') { showToast('관리자만 삭제할 수 있습니다.', 'error'); return false; }
+  await dbRef('backups/' + backupId).remove();
+  return true;
+}
+
+// 자동 백업 트리거 — admin 로그인 시 BACKUP_INTERVAL_MS 경과 확인
+async function maybeAutoBackup() {
+  if (!currentUser || currentUser.role !== 'admin') return;
+  if (!firebaseConnected) return;
+  const lastIso = localStorage.getItem(BACKUP_LAST_TIME_KEY);
+  const last = lastIso ? new Date(lastIso).getTime() : 0;
+  if (Date.now() - last < BACKUP_INTERVAL_MS) return;
+  try {
+    console.log('Auto backup triggered (last:', lastIso || 'never', ')');
+    const id = await createBackup('auto');
+    if (id) showToast('자동 백업 완료 (' + id + ')', 'success');
+  } catch(e) {
+    console.warn('Auto backup failed:', e);
+  }
+}
+
+// UI handlers
+async function manualBackup() {
+  if (!currentUser || currentUser.role !== 'admin') { showToast('관리자 전용', 'error'); return; }
+  showToast('백업 생성 중...', 'info');
+  try {
+    const id = await createBackup('manual');
+    showToast('백업 완료: ' + id, 'success');
+    refreshBackupList();
+  } catch(e) {
+    showToast('백업 실패: ' + (e.message || e), 'error');
+  }
+}
+
+async function refreshBackupList() {
+  const container = document.getElementById('backupList');
+  if (!container) return;
+  container.innerHTML = '<div style="color:#9EA2A1;padding:12px 0;">불러오는 중...</div>';
+  try {
+    const list = await listBackups();
+    if (list.length === 0) {
+      container.innerHTML = '<div style="color:#9EA2A1;padding:12px 0;">백업이 없습니다. "지금 백업"으로 첫 백업을 생성하세요.</div>';
+      return;
+    }
+    const rows = list.map(b => {
+      const date = b.createdAt ? new Date(b.createdAt).toLocaleString('ko-KR') : b.id;
+      const trigger = b.trigger === 'auto' ? '<span style="color:#22C55E;">자동</span>' :
+                       b.trigger === 'pre-restore' ? '<span style="color:#F59E0B;">복원전</span>' :
+                       '<span style="color:#6366F1;">수동</span>';
+      const c = b.counts || {};
+      const summary = '심사 ' + (c.assessments||0) + ' / 심사원 ' + (c.auditors||0) + ' / 일정 ' + (c.schedule||0) + ' / 메모 ' + (c.memos||0);
+      const idSafe = b.id.replace(/'/g, "\\'");
+      return '<tr style="border-bottom:1px solid #f3f4f6;">' +
+        '<td style="padding:10px 8px;font-size:12px;">' + date + '</td>' +
+        '<td style="padding:10px 8px;font-size:12px;">' + trigger + '</td>' +
+        '<td style="padding:10px 8px;font-size:12px;color:#566062;">' + b.createdBy + '</td>' +
+        '<td style="padding:10px 8px;font-size:11px;color:#9EA2A1;">' + summary + '</td>' +
+        '<td style="padding:10px 8px;text-align:right;white-space:nowrap;">' +
+          '<button onclick="downloadBackupAsJson(\'' + idSafe + '\')" class="pill-btn pill-btn-outline" style="font-size:11px;padding:4px 10px;margin-right:4px;">다운로드</button>' +
+          '<button onclick="confirmRestore(\'' + idSafe + '\')" class="pill-btn" style="font-size:11px;padding:4px 10px;background:#F59E0B;color:#fff;margin-right:4px;">복원</button>' +
+          '<button onclick="confirmDeleteBackup(\'' + idSafe + '\')" class="pill-btn" style="font-size:11px;padding:4px 10px;background:#D20015;color:#fff;">삭제</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+    container.innerHTML =
+      '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+      '<thead><tr style="border-bottom:2px solid #e5e7eb;text-align:left;background:#f9fafb;">' +
+        '<th style="padding:10px 8px;font-weight:600;font-size:12px;">생성 일시</th>' +
+        '<th style="padding:10px 8px;font-weight:600;font-size:12px;">유형</th>' +
+        '<th style="padding:10px 8px;font-weight:600;font-size:12px;">생성자</th>' +
+        '<th style="padding:10px 8px;font-weight:600;font-size:12px;">데이터 건수</th>' +
+        '<th style="padding:10px 8px;text-align:right;font-weight:600;font-size:12px;">작업</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div style="font-size:11px;color:#9EA2A1;margin-top:8px;">※ 최근 ' + BACKUP_KEEP_COUNT + '개까지 보관. 초과 시 오래된 백업부터 자동 삭제.</div>';
+  } catch(e) {
+    container.innerHTML = '<div style="color:#D20015;padding:12px 0;">목록 로드 실패: ' + (e.message || e) + '</div>';
+  }
+}
+
+async function confirmRestore(backupId) {
+  if (!confirm('이 백업으로 복원하시겠습니까?\n\n현재 Firebase 데이터는 자동으로 안전 백업된 후 덮어씌워집니다.')) return;
+  if (!confirm('정말 복원하시겠습니까? 마지막 확인입니다.\n\n복원 ID: ' + backupId)) return;
+  try { await restoreFromBackup(backupId); }
+  catch(e) { showToast('복원 실패: ' + (e.message || e), 'error'); }
+}
+
+async function confirmDeleteBackup(backupId) {
+  if (!confirm('이 백업을 삭제하시겠습니까?\n\n삭제 ID: ' + backupId)) return;
+  try {
+    if (await deleteBackup(backupId)) { showToast('백업 삭제됨', 'success'); refreshBackupList(); }
+  } catch(e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
+}
+
 // v19.13.0: 로그인 시 Firebase에서 명시적 fetch — listener 의존 race 제거.
 // 신규 디바이스든 기존 디바이스든 Firebase가 진실 source임을 보장.
 async function loadFreshDataFromFirebase() {
   if (!firebaseDb) return { ok: false, reason: 'no firebase' };
   const result = { ok: true, counts: {} };
   try {
-    // 4개 path 병렬 fetch
-    const [assessmentsSnap, auditorsSnap, scheduleSnap, customStationsSnap] = await Promise.all([
+    // v19.14.0: 5개 path 병렬 fetch (memos 추가 — 신규 디바이스에서 메모도 즉시 표시)
+    const [assessmentsSnap, auditorsSnap, scheduleSnap, customStationsSnap, memosSnap] = await Promise.all([
       dbRef('assessments').once('value'),
       dbRef('auditors').once('value'),
       dbRef('schedule').once('value'),
       dbRef('customStations').once('value'),
+      dbRef('memos').once('value'),
     ]);
 
     // assessments
@@ -3510,6 +3760,42 @@ async function loadFreshDataFromFirebase() {
       _fbFirstSync.customStations = true;
     }
     result.counts.customStations = customStations.length;
+
+    // v19.14.0: memos — _unsynced 보존 정책 (RTDB가 진실 source + 미동기화 메모 유지)
+    const memosData = memosSnap.val();
+    const localMemos = SafeStorage.get(MEMO_STORAGE_KEY, {});
+    const fromRemote = {};
+    let memoCount = 0;
+    if (memosData) {
+      for (const [yr, byStation] of Object.entries(memosData)) {
+        for (const [stKey, byId] of Object.entries(byStation || {})) {
+          for (const memo of Object.values(byId || {})) {
+            if (!memo || !memo.year || !memo.station || !memo.id) continue;
+            const key = memo.year + '_' + memo.station;
+            if (!fromRemote[key]) fromRemote[key] = {};
+            if (memo.type === 'checklist' && memo.items && !Array.isArray(memo.items)) {
+              memo.items = Object.keys(memo.items).sort((a,b)=>+a-+b).map(k => memo.items[k]);
+            }
+            fromRemote[key][memo.id] = memo;
+            memoCount++;
+          }
+        }
+      }
+    }
+    // _unsynced 메모 보존
+    const newLocal = {};
+    for (const [k, byId] of Object.entries(fromRemote)) newLocal[k] = Object.assign({}, byId);
+    for (const [k, byId] of Object.entries(localMemos || {})) {
+      for (const [id, memo] of Object.entries(byId || {})) {
+        if (memo && memo._unsynced) {
+          if (!newLocal[k]) newLocal[k] = {};
+          newLocal[k][id] = memo;
+        }
+      }
+    }
+    SafeStorage.set(MEMO_STORAGE_KEY, newLocal);
+    _fbFirstSync.memos = true;
+    result.counts.memos = memoCount;
 
     return result;
   } catch (e) {
@@ -3558,6 +3844,9 @@ async function onLoginSuccess() {
 
   // v19.1: CAR 데이터 Firebase 동기화
   loadCarDataFromFirebase();
+
+  // v19.14.0: 자동 백업 — admin이고 24h 경과 시
+  try { maybeAutoBackup(); } catch(e) { console.warn('maybeAutoBackup failed:', e); }
 }
 
 function hasRole(minRole) {
