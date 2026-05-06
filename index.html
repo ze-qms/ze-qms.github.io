@@ -1464,7 +1464,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.11.13</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1630,7 +1630,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.11.13',
+  version: '19.12.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -10718,19 +10718,23 @@ function renderHomeMySchedule(currentYear) {
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  // D-day 계산 및 완료 여부 확인
+  // v19.12.0: D-day 계산 + calcScheduleStatus 기반 분류 (지점·본부 모두 지원)
   const items = mySchedules.map(s => {
-    const hasData = allData.some(d => d.year == currentYear && d.station === s.station && d.auditCategory === 'branch');
+    const stat = calcScheduleStatus(s); // {status, label, count, total}
     const startDate = s.dateStart ? new Date(s.dateStart) : null;
     let dday = null;
     if (startDate) {
       startDate.setHours(0,0,0,0);
       dday = Math.ceil((startDate - today) / (1000*60*60*24));
     }
-    // 완료 심사 점수
+    // 점수 — 작성된 데이터가 1건이라도 있으면 평균 계산 (branch + division 모두)
     let avgScore = null;
-    if (hasData) {
-      const records = allData.filter(d => d.year == currentYear && d.station === s.station && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade');
+    if (stat.count > 0) {
+      const records = allData.filter(d =>
+        d.year == currentYear &&
+        (d.station === s.station || d.division === s.station) &&
+        getScoringMethod(d.type) === 'grade'
+      );
       let sum = 0, cnt = 0;
       records.forEach(d => {
         const r = calculateScores(d.scores, getChecklist(d.type));
@@ -10738,20 +10742,26 @@ function renderHomeMySchedule(currentYear) {
       });
       if (cnt > 0) avgScore = sum / cnt;
     }
-    return { ...s, dday, hasData, avgScore };
+    const isDone = stat.status === 'completed';
+    const isNeedsAction = stat.status === 'overdue' || stat.status === 'incomplete';
+    return { ...s, dday, status: stat.status, count: stat.count, total: stat.total, avgScore, isDone, isNeedsAction, hasData: isDone };
   });
 
-  // 분리: 미완료(다가오는) vs 완료
-  const pending = items.filter(i => !i.hasData).sort((a,b) => (a.dday ?? 999) - (b.dday ?? 999));
-  const done = items.filter(i => i.hasData).sort((a,b) => {
+  // v19.12.0: 3-way 분리
+  const done = items.filter(i => i.isDone).sort((a,b) => {
     const da = a.dateStart ? new Date(a.dateStart) : new Date(0);
     const db = b.dateStart ? new Date(b.dateStart) : new Date(0);
     return db - da;
   });
+  // 작성 요망: 시기 지났으나 점검표 미완료 — 가장 오래 지난 순(dday 음수가 작은 순)
+  const needsAction = items.filter(i => i.isNeedsAction).sort((a,b) => (a.dday ?? 0) - (b.dday ?? 0));
+  // 다가오는: upcoming + in_progress
+  const pending = items.filter(i => !i.isDone && !i.isNeedsAction).sort((a,b) => (a.dday ?? 999) - (b.dday ?? 999));
 
-  // D-day 카드 렌더 헬퍼
+  // D-day 카드 렌더 헬퍼 — v19.12.0: 완료 / 작성 요망 / 다가오는 3가지 상태
   function renderDdayCard(item) {
-    const isComplete = item.hasData;
+    const isComplete = item.isDone;
+    const isNeedsAction = item.isNeedsAction;
     let ddayLabel = '', ddayColor = '', extraClass = '';
     if (isComplete) {
       ddayLabel = '<svg style="width:16px;height:16px;vertical-align:middle;margin-right:4px;" fill="#22C55E" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>완료';
@@ -10762,18 +10772,21 @@ function renderHomeMySchedule(currentYear) {
       else if (item.dday <= 30) { ddayLabel = 'D-' + item.dday; ddayColor = '#F59E0B'; }
       else { ddayLabel = 'D-' + item.dday; ddayColor = '#22C55E'; }
     } else { ddayLabel = '일정 미정'; ddayColor = '#9EA2A1'; }
-    const bgColor = isComplete ? 'rgba(158,162,161,0.06)' : (item.dday !== null && item.dday <= 7 ? 'rgba(210,0,21,0.04)' : 'rgba(192,206,209,0.08)');
+    const bgColor = isComplete ? 'rgba(158,162,161,0.06)'
+      : isNeedsAction ? 'rgba(245,158,11,0.06)'
+      : (item.dday !== null && item.dday <= 7 ? 'rgba(210,0,21,0.04)' : 'rgba(192,206,209,0.08)');
     const dateStr = item.dateStart ? item.dateStart.substring(5).replace('-', '.') + (item.dateEnd ? '~' + item.dateEnd.substring(5).replace('-', '.') : '') : '미정';
-    // v19.11.7: 완료 카드 점수를 우상단 absolute 배지로 (다가오는 카드와 layout 통일)
     let c = '<div class="dday-card' + extraClass + '" style="background:' + bgColor + ';flex:0 0 auto;min-width:150px;">';
-    // 우상단 점수 배지 (완료 카드만)
+    // 우상단 배지: 완료=점수, 작성 요망=진행률
     if (isComplete && item.avgScore !== null) {
       c += '<div style="position:absolute;top:12px;right:12px;"><div class="badge-pill" style="' + Scoring.getBadgeStyle(item.avgScore) + 'font-size:11px;font-weight:700;padding:3px 10px;">' + item.avgScore.toFixed(2) + '점</div></div>';
+    } else if (isNeedsAction && item.total > 0) {
+      c += '<div style="position:absolute;top:12px;right:12px;"><div class="badge-pill" style="background:rgba(245,158,11,0.15);color:#F59E0B;font-size:11px;font-weight:700;padding:3px 10px;">' + item.count + '/' + item.total + '</div></div>';
     }
     c += '<div style="font-size:24px;font-weight:800;color:' + ddayColor + ';letter-spacing:-0.5px;margin-bottom:8px;">' + ddayLabel + '</div>';
     c += '<div style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:4px;">' + item.station + '</div>';
     c += '<div style="font-size:12px;color:#9EA2A1;margin-bottom:8px;">' + dateStr + '</div>';
-    // 하단 액션 링크 — 완료/미완료 통일된 디자인
+    // 하단 액션 링크
     c += '<div style="margin-top:auto;display:flex;flex-direction:column;gap:6px;">';
     c += '<div style="font-size:12px;color:#D20015;font-weight:500;cursor:pointer;" onclick="openStationDetail(' + currentYear + ',&apos;' + item.station + '&apos;)">상세 &rsaquo;</div>';
     if (isComplete) {
@@ -10789,15 +10802,14 @@ function renderHomeMySchedule(currentYear) {
 
   let html = '';
 
-  if (done.length === 0 && pending.length === 0) {
+  if (done.length === 0 && needsAction.length === 0 && pending.length === 0) {
     el.innerHTML = '<div class="apple-card" style="padding:20px;text-align:center;"><div style="font-size:13px;color:#9EA2A1;">올해 배정된 심사 일정이 없습니다</div></div>';
     return;
   }
 
-  // 레이아웃: 완료 컬럼(제목+카드) + 구분선 + 다가오는 컬럼(제목+카드들)
-  // v19.9.9: 세로 스크롤 제거 + 카드 크기 통일 + 다가오는 심사 가로 스와이프 반응형
+  // v19.12.0: 3-컬럼 레이아웃 — 최근 완료 / 작성 요망(NEW) / 다가오는 심사
   html += '<div class="apple-card home-dday-wrap" style="padding:20px;overflow:hidden;">';
-  html += '<div style="display:flex;gap:12px;align-items:flex-start;">';
+  html += '<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">';
 
   // ── 왼쪽 컬럼: 최근 완료 ──
   if (done.length > 0) {
@@ -10810,8 +10822,28 @@ function renderHomeMySchedule(currentYear) {
     html += '</div>';
   }
 
-  // 구분선
-  if (done.length > 0 && pending.length > 0) {
+  // 구분선 (완료 ↔ 작성 요망)
+  if (done.length > 0 && needsAction.length > 0) {
+    html += '<div class="home-dday-divider" style="width:1px;background:rgba(192,206,209,0.3);flex:0 0 1px;margin:30px 4px 0;align-self:stretch;"></div>';
+  }
+
+  // ── 가운데 컬럼: 작성 요망 (시기 지났으나 점검표 미완료) ──
+  if (needsAction.length > 0) {
+    html += '<div style="flex:0 1 auto;display:flex;flex-direction:column;min-width:0;max-width:100%;">';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;height:20px;">';
+    html += '<span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:980px;background:rgba(245,158,11,0.12);color:#F59E0B;">작성 요망</span>';
+    html += '<span style="font-size:11px;color:#D20015;cursor:pointer;font-weight:500;" onclick="switchTab(5)">전체 &rsaquo;</span>';
+    html += '</div>';
+    html += '<div class="dday-card-row" style="display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;padding:6px 0;">';
+    needsAction.slice(0, 3).forEach((item) => {
+      html += '<div style="flex:0 0 auto;scroll-snap-align:start;">' + renderDdayCard(item) + '</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+  }
+
+  // 구분선 (작성 요망 ↔ 다가오는, 또는 완료 ↔ 다가오는)
+  if ((needsAction.length > 0 || done.length > 0) && pending.length > 0) {
     html += '<div class="home-dday-divider" style="width:1px;background:rgba(192,206,209,0.3);flex:0 0 1px;margin:30px 4px 0;align-self:stretch;"></div>';
   }
 
