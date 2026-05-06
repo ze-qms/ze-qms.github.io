@@ -1465,7 +1465,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.5</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.6</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -9955,11 +9955,17 @@ function setupFirebaseListeners() {
     if (isFirst || JSON.stringify(newData) !== JSON.stringify(allData)) {
       allData = newData;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
-      // v19.12.2: 첫 sync에서도 UI 갱신 (다른 기기에서 캐시 없이 첫 접속 시 화면 비어 보이던 버그)
-      if (currentUser) refreshCurrentView();
+      // v19.12.6: currentUser 가드 제거 — race condition 방지 (memos는 가드 없이 동작했음).
+      // appWrapper가 보이면(=로그인 후) 무조건 refresh.
+      try {
+        const wrap = document.getElementById('appWrapper');
+        if (wrap && wrap.style.display !== 'none') refreshCurrentView();
+      } catch(e) {}
+      if (isFirst) try { showToast('심사 데이터 ' + newData.length + '건 로드', 'success'); } catch(e) {}
     }
   }, (err) => {
     console.warn('assessments listener cancelled:', err && err.code, err && err.message);
+    try { showToast('심사 데이터 listener 차단: ' + (err && err.code || 'unknown'), 'error'); } catch(e) {}
   });
 
   // Listen for auditors changes — Firebase 우선
@@ -9979,10 +9985,16 @@ function setupFirebaseListeners() {
       localStorage.setItem(AUDITOR_STORAGE_KEY, JSON.stringify(auditorList));
       // v19.12.2: auditor 갱신 시 myAuditorProfile 캐시 무효화 + 홈 D-day(auditor 의존) 재렌더
       window._myAuditorProfile = undefined;
-      if (currentUser) refreshCurrentView();
+      // v19.12.6: currentUser 가드 제거
+      try {
+        const wrap = document.getElementById('appWrapper');
+        if (wrap && wrap.style.display !== 'none') refreshCurrentView();
+      } catch(e) {}
+      if (isFirst) try { showToast('심사원 ' + newData.length + '명 로드', 'success'); } catch(e) {}
     }
   }, (err) => {
     console.warn('auditors listener cancelled:', err && err.code, err && err.message);
+    try { showToast('심사원 listener 차단: ' + (err && err.code || 'unknown'), 'error'); } catch(e) {}
   });
 
   // Listen for schedule changes — Firebase 우선
@@ -10001,14 +10013,19 @@ function setupFirebaseListeners() {
       scheduleData = newData;
       normalizeScheduleTargets();
       localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(scheduleData));
-      // v19.12.2: 일정탭 외(특히 홈)도 schedule 의존 → 첫 sync 포함 항상 refresh
-      if (currentUser) {
-        if (activeTab === 5) renderSchedule();
-        else refreshCurrentView();
-      }
+      // v19.12.6: currentUser 가드 제거
+      try {
+        const wrap = document.getElementById('appWrapper');
+        if (wrap && wrap.style.display !== 'none') {
+          if (activeTab === 5) renderSchedule();
+          else refreshCurrentView();
+        }
+      } catch(e) {}
+      if (isFirst) try { showToast('일정 ' + newData.length + '건 로드', 'success'); } catch(e) {}
     }
   }, (err) => {
     console.warn('schedule listener cancelled:', err && err.code, err && err.message);
+    try { showToast('일정 listener 차단: ' + (err && err.code || 'unknown'), 'error'); } catch(e) {}
   });
 
   // Listen for CAR data — Firebase 실시간 동기화
@@ -10102,8 +10119,11 @@ function setupFirebaseListeners() {
       customStations = Object.values(data);
       localStorage.setItem(CUSTOM_STATIONS_KEY, JSON.stringify(customStations));
       mergeCustomStations();
-      // v19.12.2: REGIONS 갱신 후 의존 화면(홈·통계 등) 재렌더
-      if (currentUser) refreshCurrentView();
+      // v19.12.6: currentUser 가드 제거
+      try {
+        const wrap = document.getElementById('appWrapper');
+        if (wrap && wrap.style.display !== 'none') refreshCurrentView();
+      } catch(e) {}
     }
   });
 }
