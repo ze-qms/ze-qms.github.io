@@ -1469,7 +1469,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.7</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.8</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1635,7 +1635,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.12.5',
+  version: '19.12.8',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3203,6 +3203,10 @@ async function initFirebase() {
       // v19.11.12: 재연결 시 미동기화 메모 자동 retry
       if (!wasConnected && firebaseConnected && currentUser) {
         try { retryUnsyncedMemos(); } catch(e) { console.warn('retryUnsyncedMemos failed:', e); }
+        // v19.12.8: listener가 cancel된 적 있으면(_listenersAttached=false) 재연결 시 재등록 시도
+        if (!_listenersAttached) {
+          try { setupFirebaseListeners(); _listenersAttached = true; } catch(e) { console.warn('listener re-attach failed:', e); }
+        }
       }
     });
 
@@ -3436,6 +3440,9 @@ async function doLogout() {
   document.cookie = 'eastar_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
   // v19.12.1: 주기 retry 인터벌 정리
   if (_memoRetryIntervalId) { clearInterval(_memoRetryIntervalId); _memoRetryIntervalId = null; }
+  // v19.12.8: 다른 계정으로 재로그인 시 listener 재등록 + firstSync 토스트/refresh 재발동되도록 상태 초기화
+  _listenersAttached = false;
+  _fbFirstSync = { assessments: false, auditors: false, schedule: false, customStations: false, memos: false };
   try { await firebaseAuth.signOut(); } catch(e) { console.warn(e); }
   currentUser = null;
   showLoginScreen();
@@ -9965,10 +9972,12 @@ function setupFirebaseListeners() {
         const wrap = document.getElementById('appWrapper');
         if (wrap && wrap.style.display !== 'none') refreshCurrentView();
       } catch(e) {}
-      if (isFirst) try { showToast('심사 데이터 ' + newData.length + '건 로드', 'success'); } catch(e) {}
     }
   }, (err) => {
+    // v19.12.8: cancel 시 firstSync 리셋 + listener 재등록 가능 상태로 (memos만 하던 처리 일괄 적용)
     console.warn('assessments listener cancelled:', err && err.code, err && err.message);
+    _fbFirstSync.assessments = false;
+    _listenersAttached = false;
     try { showToast('심사 데이터 listener 차단: ' + (err && err.code || 'unknown'), 'error'); } catch(e) {}
   });
 
@@ -9994,10 +10003,12 @@ function setupFirebaseListeners() {
         const wrap = document.getElementById('appWrapper');
         if (wrap && wrap.style.display !== 'none') refreshCurrentView();
       } catch(e) {}
-      if (isFirst) try { showToast('심사원 ' + newData.length + '명 로드', 'success'); } catch(e) {}
     }
   }, (err) => {
+    // v19.12.8: cancel recovery
     console.warn('auditors listener cancelled:', err && err.code, err && err.message);
+    _fbFirstSync.auditors = false;
+    _listenersAttached = false;
     try { showToast('심사원 listener 차단: ' + (err && err.code || 'unknown'), 'error'); } catch(e) {}
   });
 
@@ -10025,10 +10036,12 @@ function setupFirebaseListeners() {
           else refreshCurrentView();
         }
       } catch(e) {}
-      if (isFirst) try { showToast('일정 ' + newData.length + '건 로드', 'success'); } catch(e) {}
     }
   }, (err) => {
+    // v19.12.8: cancel recovery
     console.warn('schedule listener cancelled:', err && err.code, err && err.message);
+    _fbFirstSync.schedule = false;
+    _listenersAttached = false;
     try { showToast('일정 listener 차단: ' + (err && err.code || 'unknown'), 'error'); } catch(e) {}
   });
 
@@ -10058,6 +10071,10 @@ function setupFirebaseListeners() {
       }
       if (updated) SafeStorage.set(CAR_STORAGE_KEY, local);
     }
+  }, (err) => {
+    // v19.12.8: cancel recovery
+    console.warn('CAR listener cancelled:', err && err.code, err && err.message);
+    _listenersAttached = false;
   });
 
   // v19.11.0: Memo 실시간 동기화 — { year: { stationKey: { memoId: memo } } }
@@ -10129,6 +10146,11 @@ function setupFirebaseListeners() {
         if (wrap && wrap.style.display !== 'none') refreshCurrentView();
       } catch(e) {}
     }
+  }, (err) => {
+    // v19.12.8: cancel recovery
+    console.warn('customStations listener cancelled:', err && err.code, err && err.message);
+    _fbFirstSync.customStations = false;
+    _listenersAttached = false;
   });
 }
 
