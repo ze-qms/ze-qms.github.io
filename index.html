@@ -1375,11 +1375,12 @@ select.apple-input {
     </div>
 
     <div class="apple-card p-6 mb-5">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_backup')">
-        <h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0;">백업</h3>
-        <span id="mgmt_backupArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
+      <!-- v19.14.5: 이름 명확화 ('백업' → 'JSON 가져오기/내보내기') — 아래 'Firebase 자동 백업'과 혼동 방지 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_jsonio')">
+        <h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0;">JSON 가져오기/내보내기</h3>
+        <span id="mgmt_jsonioArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
       </div>
-      <div id="mgmt_backup" class="hidden" style="margin-top:16px;">
+      <div id="mgmt_jsonio" class="hidden" style="margin-top:16px;">
         <div class="flex gap-3 flex-wrap">
           <button onclick="exportJSON()" class="pill-btn pill-btn-outline" style="border-color:#303A3C;color:#303A3C;">JSON 내보내기</button>
           <label class="pill-btn pill-btn-outline cursor-pointer" style="border-color:#303A3C;color:#303A3C;">
@@ -1453,16 +1454,18 @@ select.apple-input {
 
     <!-- v19.14.0: 백업 관리 -->
     <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#22C55E;margin-bottom:8px;margin-top:20px;padding-left:4px;">데이터 백업</div>
-    <div class="apple-card p-6 mb-5" id="mgmt_backup_card">
-      <!-- v19.14.4: 디버그 표식 제거. 다른 mgmt 카드와 일관된 토글 UX (default 접힘) -->
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleBackupSection()">
-        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">Firebase 데이터 백업</h3>
+    <div class="apple-card p-6 mb-5" id="mgmt_fbbackup_card">
+      <!-- v19.14.5: id 충돌 수정 — 위쪽 1377줄에 이미 'mgmt_backup'(JSON 백업) 카드가 있어
+           v19.14.0~14.4의 토글 시도가 모두 그쪽 카드를 토글하고 있었음.
+           새 id 'mgmt_fbbackup'으로 분리하고 공용 toggleSection 함수 사용 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_fbbackup')">
+        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">Firebase 자동 백업</h3>
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="font-size:11px;color:#9EA2A1;">자동 24h · 최근 30개</span>
-          <span id="mgmt_backupArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
+          <span id="mgmt_fbbackupArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
         </div>
       </div>
-      <div id="mgmt_backup" style="display:none;margin-top:14px;">
+      <div id="mgmt_fbbackup" class="hidden" style="margin-top:14px;">
         <p style="font-size:12.5px;color:#566062;margin-bottom:12px;line-height:1.55;">
           관리자 로그인 시 24시간마다 자동 백업됩니다. 최근 30개 보관, 초과분 자동 삭제.<br>
           <span style="color:#9EA2A1;">포함: 심사 · 심사원 · 일정 · 커스텀지점 · 메모 · CAR</span>
@@ -1496,7 +1499,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.4</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.5</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1662,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.14.4',
+  version: '19.14.5',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3642,22 +3645,8 @@ async function maybeAutoBackup() {
   }
 }
 
-// v19.14.4: 백업 카드 토글 — display 직접 제어 (Tailwind hidden class 충돌 회피)
-function toggleBackupSection() {
-  const el = document.getElementById('mgmt_backup');
-  const arrow = document.getElementById('mgmt_backupArrow');
-  if (!el) { console.warn('[backup] mgmt_backup element not found'); return; }
-  const isHidden = el.style.display === 'none' || getComputedStyle(el).display === 'none';
-  if (isHidden) {
-    el.style.display = 'block';
-    if (arrow) arrow.textContent = '▾'; // ▾
-    // 펼칠 때마다 목록 자동 새로고침
-    try { refreshBackupList(); } catch(e) { console.warn('refreshBackupList failed:', e); }
-  } else {
-    el.style.display = 'none';
-    if (arrow) arrow.textContent = '▸'; // ▸
-  }
-}
+// v19.14.5: toggleBackupSection 제거. 공용 toggleSection('mgmt_fbbackup') 사용.
+// 펼침 시 백업 목록 자동 로드는 원본 toggleSection 함수에 직접 hook 추가 (line ~6976).
 
 // UI handlers
 async function manualBackup() {
@@ -7048,6 +7037,11 @@ function toggleSection(sectionId) {
   const arrow = document.getElementById(sectionId + 'Arrow');
   if (el) el.classList.toggle('hidden');
   if (arrow) arrow.textContent = el.classList.contains('hidden') ? '\u25B8' : '\u25BE';
+  // v19.14.5: Firebase \uBC31\uC5C5 \uCE74\uB4DC\uAC00 \uD3BC\uCCD0\uC9C8 \uB54C \uBC31\uC5C5 \uBAA9\uB85D \uC790\uB3D9 \uB85C\uB4DC
+  if (sectionId === 'mgmt_fbbackup' && el && !el.classList.contains('hidden')) {
+    try { if (typeof refreshBackupList === 'function') refreshBackupList(); }
+    catch(e) { console.warn('refreshBackupList in toggle failed:', e); }
+  }
 }
 
 function switchStatsSubTab(tab) {
