@@ -1453,13 +1453,16 @@ select.apple-input {
 
     <!-- v19.14.0: 백업 관리 -->
     <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#22C55E;margin-bottom:8px;margin-top:20px;padding-left:4px;">데이터 백업</div>
-    <div class="apple-card p-6 mb-5" id="mgmt_backup_card" style="border:2px solid #22C55E;">
-      <!-- v19.14.3: 항상 펼침 + 진단용 강조 테두리 (사용자가 "안 보임" 신고 시 쉽게 확인) -->
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">🛟 Firebase 데이터 백업 <span style="font-size:11px;color:#22C55E;font-weight:500;">v19.14.3</span></h3>
-        <span style="font-size:11px;color:#9EA2A1;">자동 24h · 최근 30개</span>
+    <div class="apple-card p-6 mb-5" id="mgmt_backup_card">
+      <!-- v19.14.4: 디버그 표식 제거. 다른 mgmt 카드와 일관된 토글 UX (default 접힘) -->
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleBackupSection()">
+        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">Firebase 데이터 백업</h3>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:11px;color:#9EA2A1;">자동 24h · 최근 30개</span>
+          <span id="mgmt_backupArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
+        </div>
       </div>
-      <div id="mgmt_backup" style="margin-top:14px;">
+      <div id="mgmt_backup" style="display:none;margin-top:14px;">
         <p style="font-size:12.5px;color:#566062;margin-bottom:12px;line-height:1.55;">
           관리자 로그인 시 24시간마다 자동 백업됩니다. 최근 30개 보관, 초과분 자동 삭제.<br>
           <span style="color:#9EA2A1;">포함: 심사 · 심사원 · 일정 · 커스텀지점 · 메모 · CAR</span>
@@ -1493,7 +1496,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.3</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.4</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1659,7 +1662,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.14.3',
+  version: '19.14.4',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3628,14 +3631,33 @@ async function maybeAutoBackup() {
   try {
     console.log('Auto backup triggered (last:', lastIso || 'never', ')');
     const id = await createBackup('auto');
-    if (id) showToast('자동 백업 완료 (' + id + ')', 'success');
+    if (id) showToast('자동 백업 완료', 'success');
   } catch(e) {
     console.warn('Auto backup failed:', e);
+    // v19.14.4: permission_denied는 흔한 초기 상태라 사용자 노이즈 줄임 (콘솔만)
+    const msg = (e && (e.message || e.toString())) || '';
+    if (!/permission_denied/i.test(msg)) {
+      try { showToast('자동 백업 실패 — 관리 페이지 확인', 'warning'); } catch(_){}
+    }
   }
 }
 
-// v19.14.2: toggleBackupSection 제거 — 백업 카드는 항상 펼침 상태로 변경
-// 관리 탭 진입 시 renderDataManagement에서 admin이면 자동으로 refreshBackupList 호출
+// v19.14.4: 백업 카드 토글 — display 직접 제어 (Tailwind hidden class 충돌 회피)
+function toggleBackupSection() {
+  const el = document.getElementById('mgmt_backup');
+  const arrow = document.getElementById('mgmt_backupArrow');
+  if (!el) { console.warn('[backup] mgmt_backup element not found'); return; }
+  const isHidden = el.style.display === 'none' || getComputedStyle(el).display === 'none';
+  if (isHidden) {
+    el.style.display = 'block';
+    if (arrow) arrow.textContent = '▾'; // ▾
+    // 펼칠 때마다 목록 자동 새로고침
+    try { refreshBackupList(); } catch(e) { console.warn('refreshBackupList failed:', e); }
+  } else {
+    el.style.display = 'none';
+    if (arrow) arrow.textContent = '▸'; // ▸
+  }
+}
 
 // UI handlers
 async function manualBackup() {
@@ -3652,7 +3674,14 @@ async function manualBackup() {
     await refreshBackupList();
   } catch(e) {
     console.error('[backup] manualBackup error:', e);
-    showToast('백업 실패: ' + (e.message || e), 'error');
+    const msg = (e && (e.message || e.toString())) || '';
+    if (/permission_denied/i.test(msg)) {
+      showToast('Firebase 권한 미설정 — 카드 안내 참조', 'error');
+      // permission denied 안내가 backupList에도 표시되도록 강제 호출
+      try { await refreshBackupList(); } catch(_){}
+    } else {
+      showToast('백업 실패: ' + msg, 'error');
+    }
   } finally {
     buttons.forEach(b => b.disabled = false);
   }
@@ -3701,7 +3730,26 @@ async function refreshBackupList() {
       '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<div style="font-size:11px;color:#9EA2A1;margin-top:8px;">※ 최근 ' + BACKUP_KEEP_COUNT + '개까지 보관. 초과 시 오래된 백업부터 자동 삭제.</div>';
   } catch(e) {
-    container.innerHTML = '<div style="color:#D20015;padding:12px 0;">목록 로드 실패: ' + (e.message || e) + '</div>';
+    // v19.14.4: permission_denied 시 친절한 안내
+    const msg = (e && (e.message || e.toString())) || '';
+    const isPermDenied = /permission_denied|PERMISSION_DENIED/i.test(msg);
+    if (isPermDenied) {
+      container.innerHTML =
+        '<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:14px;">' +
+        '<div style="font-weight:600;color:#92400E;margin-bottom:8px;font-size:13px;">⚠ Firebase 권한 설정 필요</div>' +
+        '<div style="font-size:12.5px;color:#78350F;line-height:1.6;margin-bottom:10px;">' +
+        '백업 저장소(<code style="background:#fff;padding:1px 5px;border-radius:3px;">' + APP_ENV + '/backups</code>)에 대한 권한이 Firebase Realtime Database 보안 규칙에 정의되지 않았습니다. ' +
+        '관리자 계정으로 Firebase 콘솔에서 다음 규칙을 추가해 주세요.' +
+        '</div>' +
+        '<details style="font-size:12px;">' +
+        '<summary style="cursor:pointer;color:#92400E;font-weight:600;">규칙 예시 보기 ▾</summary>' +
+        '<pre style="background:#1F2937;color:#F9FAFB;padding:10px;border-radius:6px;margin-top:8px;overflow-x:auto;font-size:11px;line-height:1.5;">"' + APP_ENV + '": {\n  "backups": {\n    ".read": "auth != null && root.child(\'' + APP_ENV + '/users/\' + auth.uid + \'/role\').val() === \'admin\'",\n    ".write": "auth != null && root.child(\'' + APP_ENV + '/users/\' + auth.uid + \'/role\').val() === \'admin\'"\n  },\n  /* 기존 다른 path들 ... */\n}</pre>' +
+        '</details>' +
+        '<div style="font-size:11px;color:#9EA2A1;margin-top:10px;">Firebase Console → Realtime Database → Rules 탭에서 수정 → "게시"</div>' +
+        '</div>';
+    } else {
+      container.innerHTML = '<div style="color:#D20015;padding:12px 0;">목록 로드 실패: ' + msg + '</div>';
+    }
   }
 }
 
@@ -9859,10 +9907,7 @@ function renderDataManagement() {
   renderUserManagement();
   // 커스텀 심사 대상 목록
   renderCustomStationList();
-  // v19.14.2: admin이면 백업 목록 자동 로드 (카드 항상 펼침 상태)
-  if (currentUser && currentUser.role === 'admin' && firebaseDb) {
-    try { refreshBackupList(); } catch(e) { console.warn('refreshBackupList in renderDataManagement failed:', e); }
-  }
+  // v19.14.4: 백업 목록 자동 로드 제거 — 토글 펼침 시에만 호출 (default 접힘 카드)
   // Populate export station dropdown
   const sel = document.getElementById('exportStation');
   const currentVal = sel.value;
