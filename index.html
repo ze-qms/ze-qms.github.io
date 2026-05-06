@@ -1469,7 +1469,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.8</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.12.9</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1635,7 +1635,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.12.8',
+  version: '19.12.9',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -2907,7 +2907,12 @@ let auditorList = [];
 function loadAuditors() {
   const stored = SafeStorage.get(AUDITOR_STORAGE_KEY, null);
   if (stored) { auditorList = stored; }
-  else { auditorList = JSON.parse(JSON.stringify(PRELOADED_AUDITORS)); saveAuditors(); }
+  else {
+    // v19.12.9: 신규 디바이스 wipe 방지 — PRELOADED 빈 배열을 Firebase로 push하지 않음.
+    // Firebase listener가 실제 데이터를 가져옴 (또는 onLoginSuccess의 명시적 fetch).
+    auditorList = JSON.parse(JSON.stringify(PRELOADED_AUDITORS));
+    SafeStorage.set(AUDITOR_STORAGE_KEY, auditorList); // local만
+  }
 }
 function saveAuditors() {
   SafeStorage.set(AUDITOR_STORAGE_KEY, auditorList);
@@ -3735,11 +3740,14 @@ function loadSchedule() {
           }
         }
       });
-      saveSchedule();
+      // v19.12.9: 신규 디바이스 wipe 방지 — seed 데이터(AUDIT_SCHEDULE_2026)로 Firebase의 사용자 수정 일정을
+      // 덮어쓰는 사고 차단. local에만 저장하고 Firebase는 listener에 맡김.
+      SafeStorage.set(SCHEDULE_STORAGE_KEY, scheduleData);
     }
   } catch(e) {
     scheduleData = [];
-    saveSchedule();
+    // v19.12.9: 빈 배열 push 차단
+    SafeStorage.set(SCHEDULE_STORAGE_KEY, scheduleData);
   }
   // Normalize auditTarget for existing records that don't have it
   normalizeScheduleTargets();
@@ -4142,14 +4150,17 @@ function loadAllData() {
       allData = JSON.parse(JSON.stringify(PRELOADED_DATA));
     }
     allData = allData.map(normalizeRecord);
-    if (!stored) saveAllData();
-    // 마이그레이션된 데이터 저장
+    // v19.12.9: 신규 디바이스 wipe 방지 — PRELOADED 빈 배열로 saveAllData 호출하면
+    // firebaseSaveAllData가 Firebase 전체 assessments path를 빈 객체로 덮어씀!
+    // local에만 저장하고 Firebase는 listener에 맡김.
+    if (!stored) SafeStorage.set(STORAGE_KEY, allData);
+    // 마이그레이션된 데이터는 실제 데이터 변경이므로 정상 저장 (Firebase 포함)
     if (allData.some(d => d._safetyIdMigrated && !stored?._migrationSaved)) saveAllData();
   } catch (e) {
     console.warn('Data load failed, using defaults:', e);
     allData = JSON.parse(JSON.stringify(PRELOADED_DATA));
     allData = allData.map(normalizeRecord);
-    saveAllData();
+    SafeStorage.set(STORAGE_KEY, allData); // v19.12.9: local만
   }
 }
 
@@ -10189,6 +10200,17 @@ function decodeScoresFromFirebase(scores) {
 
 function firebaseSaveAllData() {
   if (!firebaseDb) return Promise.resolve();
+  // v19.12.9: WIPE 방어 — listener 첫 sync 전엔 절대 set() 금지.
+  // 첫 sync 전엔 Firebase 실제 상태를 모르므로 빈/seed 데이터로 덮어쓸 위험.
+  if (!_fbFirstSync.assessments) {
+    console.warn('firebaseSaveAllData blocked: assessments first sync not done');
+    return Promise.resolve();
+  }
+  // v19.12.9: 빈 배열 push 추가 방어 (사용자가 의도적으로 전체 삭제하지 않는 한 set({}) 차단)
+  if (allData.length === 0) {
+    console.warn('firebaseSaveAllData blocked: allData is empty (use clearAllData() to intentionally wipe)');
+    return Promise.resolve();
+  }
   try {
     const assessmentObj = {};
     allData.forEach(d => {
@@ -10203,6 +10225,15 @@ function firebaseSaveAllData() {
 
 function firebaseSaveAuditors() {
   if (!firebaseDb) return Promise.resolve();
+  // v19.12.9: WIPE 방어
+  if (!_fbFirstSync.auditors) {
+    console.warn('firebaseSaveAuditors blocked: auditors first sync not done');
+    return Promise.resolve();
+  }
+  if (auditorList.length === 0) {
+    console.warn('firebaseSaveAuditors blocked: auditorList is empty');
+    return Promise.resolve();
+  }
   try {
     const obj = {};
     auditorList.forEach((a, i) => {
@@ -10214,6 +10245,15 @@ function firebaseSaveAuditors() {
 
 function firebaseSaveSchedule() {
   if (!firebaseDb) return Promise.resolve();
+  // v19.12.9: WIPE 방어
+  if (!_fbFirstSync.schedule) {
+    console.warn('firebaseSaveSchedule blocked: schedule first sync not done');
+    return Promise.resolve();
+  }
+  if (scheduleData.length === 0) {
+    console.warn('firebaseSaveSchedule blocked: scheduleData is empty');
+    return Promise.resolve();
+  }
   try {
     const obj = {};
     scheduleData.forEach(s => {
