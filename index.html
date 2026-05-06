@@ -694,10 +694,10 @@ select.apple-input {
 </head>
 <body class="min-h-screen flex flex-col" style="background:#f9f9fb;">
 
-<!-- Toast Container — v19.14.1: 모바일은 상단 중앙, 데스크톱은 우상단 -->
-<div id="toastContainer" class="fixed z-[9999] flex flex-col gap-2 items-center md:items-end" style="top:max(env(safe-area-inset-top),12px);left:50%;right:auto;transform:translateX(-50%);"></div>
+<!-- Toast Container — v19.14.3: 모바일은 헤더 아래(제목 안 가림), 데스크톱은 우상단 -->
+<div id="toastContainer" class="fixed z-[9999] flex flex-col gap-2 items-center md:items-end" style="top:calc(env(safe-area-inset-top, 0px) + 64px);left:50%;right:auto;transform:translateX(-50%);"></div>
 <style>
-  @media (min-width:768px){#toastContainer{left:auto;right:16px;transform:none;}}
+  @media (min-width:768px){#toastContainer{top:16px !important;left:auto !important;right:16px !important;transform:none !important;}}
 </style>
 
 <!-- Loading Overlay -->
@@ -1453,10 +1453,10 @@ select.apple-input {
 
     <!-- v19.14.0: 백업 관리 -->
     <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#22C55E;margin-bottom:8px;margin-top:20px;padding-left:4px;">데이터 백업</div>
-    <div class="apple-card p-6 mb-5" id="mgmt_backup_card">
-      <!-- v19.14.2: 헤더 자체에 cursor 없음 — 카드는 항상 펼침 상태 (토글 제거, 내용이 바로 보임) -->
+    <div class="apple-card p-6 mb-5" id="mgmt_backup_card" style="border:2px solid #22C55E;">
+      <!-- v19.14.3: 항상 펼침 + 진단용 강조 테두리 (사용자가 "안 보임" 신고 시 쉽게 확인) -->
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">Firebase 데이터 백업</h3>
+        <h3 style="font-size:17px;font-weight:600;color:#303A3C;margin:0;">🛟 Firebase 데이터 백업 <span style="font-size:11px;color:#22C55E;font-weight:500;">v19.14.3</span></h3>
         <span style="font-size:11px;color:#9EA2A1;">자동 24h · 최근 30개</span>
       </div>
       <div id="mgmt_backup" style="margin-top:14px;">
@@ -1493,7 +1493,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.3</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1607,8 +1607,8 @@ select.apple-input {
 
 </main>
 
-<!-- v19.11.0: Phase 4 모바일 FAB + 바텀시트 -->
-<button id="memoFab" onclick="openMemoPanel()" class="md:hidden" style="display:none;position:fixed;right:16px;bottom:calc(144px + env(safe-area-inset-bottom));width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0067C4 0%,#0050a0 100%);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,103,196,0.4);font-size:18px;cursor:pointer;z-index:45;align-items:center;justify-content:center;">
+<!-- v19.14.3: 모바일 floating FAB 컨테이너 — 메모 + 스크롤업 column 정렬, 같은 크기, 충분한 간격 -->
+<button id="memoFab" onclick="openMemoPanel()" class="md:hidden" style="display:none;position:fixed;right:16px;bottom:calc(154px + env(safe-area-inset-bottom));width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0067C4 0%,#0050a0 100%);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,103,196,0.35);font-size:20px;cursor:pointer;z-index:45;align-items:center;justify-content:center;">
   📋
   <span id="memoFabBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#D20015;color:#fff;border-radius:980px;font-size:11px;font-weight:700;min-width:20px;height:20px;padding:0 6px;line-height:20px;border:2px solid #fff;"></span>
 </button>
@@ -1659,7 +1659,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.14.2',
+  version: '19.14.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3639,23 +3639,33 @@ async function maybeAutoBackup() {
 
 // UI handlers
 async function manualBackup() {
+  console.log('[backup] manualBackup called', { user: currentUser, role: currentUser && currentUser.role });
   if (!currentUser || currentUser.role !== 'admin') { showToast('관리자 전용', 'error'); return; }
+  // v19.14.3: 버튼 disable + visual feedback
+  const buttons = document.querySelectorAll('#mgmt_backup button');
+  buttons.forEach(b => b.disabled = true);
   showToast('백업 생성 중...', 'info');
   try {
     const id = await createBackup('manual');
-    showToast('백업 완료: ' + id, 'success');
-    refreshBackupList();
+    showToast('✓ 백업 완료', 'success');
+    console.log('[backup] manualBackup success:', id);
+    await refreshBackupList();
   } catch(e) {
+    console.error('[backup] manualBackup error:', e);
     showToast('백업 실패: ' + (e.message || e), 'error');
+  } finally {
+    buttons.forEach(b => b.disabled = false);
   }
 }
 
 async function refreshBackupList() {
+  console.log('[backup] refreshBackupList called', { user: currentUser, fbDb: !!firebaseDb, env: typeof APP_ENV !== 'undefined' ? APP_ENV : '?' });
   const container = document.getElementById('backupList');
-  if (!container) return;
+  if (!container) { console.warn('[backup] #backupList element not found'); return; }
   container.innerHTML = '<div style="color:#9EA2A1;padding:12px 0;">불러오는 중...</div>';
   try {
     const list = await listBackups();
+    console.log('[backup] listBackups returned:', list.length, 'items');
     if (list.length === 0) {
       container.innerHTML = '<div style="color:#9EA2A1;padding:12px 0;">백업이 없습니다. "지금 백업"으로 첫 백업을 생성하세요.</div>';
       return;
@@ -14167,7 +14177,7 @@ window._sdMemoExpanded = (typeof _sdMemoExpanded !== 'undefined') ? _sdMemoExpan
 })(); // end IIFE
 </script>
 <!-- FAB: Scroll to Top -->
-<button id="fabScrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" style="display:none;position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));right:16px;z-index:44;width:44px;height:44px;border-radius:50%;background:#D20015;color:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;font-size:18px;line-height:44px;text-align:center;transition:opacity 0.2s;">&#8593;</button>
+<button id="fabScrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" style="display:none;position:fixed;bottom:calc(90px + env(safe-area-inset-bottom));right:16px;z-index:44;width:48px;height:48px;border-radius:50%;background:#D20015;color:#fff;border:none;box-shadow:0 4px 16px rgba(210,0,21,0.35);cursor:pointer;font-size:20px;line-height:48px;text-align:center;transition:opacity 0.2s;">&#8593;</button>
 
 <!-- Analysis Modal Overlay -->
 <div id="analysisModalOverlay" class="analysis-modal-overlay" onclick="if(event.target===this)closeAnalysisModal()">
