@@ -1499,7 +1499,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.2</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.15.1',
+  version: '19.15.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7083,20 +7083,36 @@ function renderDivisionStats() {
     divGroups[div].push(d);
   });
 
-  // Summary cards (like branch stats)
+  // 본부별 점수 미리 계산 (v19.15.2: 영역 단순평균 정책 → detail과 일치)
+  // - 본부 내부: 품질심사·안전감사·FSDS 영역 적합률의 단순평균 (미실시 영역 제외)
+  // - 상단 카드: 본부별 종합점수의 단순평균 (본부 간 비교 공평성)
+  const divScores = {};
   let totalS = 0, totalU = 0, totalNA = 0, totalDivs = Object.keys(divGroups).length;
-  divData.forEach(d => {
-    const r = calculateBinaryScores(d.scores, getChecklist(d.type));
-    totalS += r.yesCount; totalU += r.noCount; totalNA += r.naCount;
-  });
-  const totalApp = totalS + totalU;
-  const overallRate = totalApp > 0 ? (totalS / totalApp * 100) : 0;
+  for (const [divName, records] of Object.entries(divGroups)) {
+    let dS = 0, dU = 0, dNA = 0;
+    let qaS = 0, qaU = 0;
+    let safetyRate = null, fsdsRate = null;
+    records.forEach(r => {
+      const res = calculateBinaryScores(r.scores, getChecklist(r.type));
+      dS += res.yesCount; dU += res.noCount; dNA += res.naCount;
+      if (r.type && r.type.startsWith('qa_')) { qaS += res.yesCount; qaU += res.noCount; }
+      else if (r.type === 'safety_division') { safetyRate = res.complianceRate; }
+      else if (r.type === 'fsds') { fsdsRate = res.complianceRate; }
+    });
+    const qaRate = (qaS + qaU) > 0 ? (qaS / (qaS + qaU) * 100) : null;
+    const _areas = [qaRate, safetyRate, fsdsRate].filter(v => v !== null && v !== undefined && !isNaN(v));
+    const dRate = _areas.length > 0 ? _areas.reduce((a, b) => a + b, 0) / _areas.length : null;
+    divScores[divName] = { dRate, dS, dU, dNA };
+    totalS += dS; totalU += dU; totalNA += dNA;
+  }
+  const _validDivRates = Object.values(divScores).map(s => s.dRate).filter(v => v !== null && v !== undefined && !isNaN(v));
+  const overallRate = _validDivRates.length > 0 ? _validDivRates.reduce((a, b) => a + b, 0) / _validDivRates.length : 0;
 
   html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">`;
   html += `<div class="apple-card" style="padding:16px;text-align:center;">`;
-  html += `<div style="font-size:12px;color:#9EA2A1;">전체 적합률</div>`;
+  html += `<div style="font-size:12px;color:#9EA2A1;">본부 평균 적합률</div>`;
   html += `<div style="font-size:28px;font-weight:600;color:${overallRate >= 90 ? '#22C55E' : overallRate >= 70 ? '#F59E0B' : '#D20015'};">${overallRate.toFixed(1)}%</div>`;
-  html += `<div style="font-size:12px;color:#9EA2A1;">${divData.length}건 심사</div>`;
+  html += `<div style="font-size:12px;color:#9EA2A1;">${divData.length}건 심사 · ${_validDivRates.length}개 본부</div>`;
   html += `</div>`;
   html += `<div class="apple-card" style="padding:16px;text-align:center;">`;
   html += `<div style="font-size:12px;color:#9EA2A1;">적합 (S)</div>`;
@@ -7115,13 +7131,10 @@ function renderDivisionStats() {
   // Division cards (expandable, like branch)
   let cardIdx = 0;
   for (const [divName, records] of Object.entries(divGroups)) {
-    let dS = 0, dU = 0, dNA = 0;
-    records.forEach(r => {
-      const res = calculateBinaryScores(r.scores, getChecklist(r.type));
-      dS += res.yesCount; dU += res.noCount; dNA += res.naCount;
-    });
-    const dApp = dS + dU;
-    const dRate = dApp > 0 ? (dS / dApp * 100) : 0;
+    // v19.15.2: 미리 계산된 divScores 사용 (본부 detail과 동일한 영역 단순평균)
+    const _ds = divScores[divName] || { dRate: 0, dS: 0, dU: 0, dNA: 0 };
+    const dS = _ds.dS, dU = _ds.dU, dNA = _ds.dNA;
+    const dRate = _ds.dRate !== null && !isNaN(_ds.dRate) ? _ds.dRate : 0;
     const rateColor = dRate >= 90 ? '#22C55E' : dRate >= 70 ? '#F59E0B' : '#D20015';
     const barW = Math.min(dRate, 100).toFixed(0);
     const detailId = `divStatDetail_${cardIdx}`;
