@@ -1499,7 +1499,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.14.5</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.14.5',
+  version: '19.15.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -13357,7 +13357,11 @@ function gatherDivisionData(year, division) {
   const totalS = qaTotalS + (safetyResult?.yesCount || 0) + (fsdsResult?.yesCount || 0);
   const totalU = qaTotalU + (safetyResult?.noCount || 0) + (fsdsResult?.noCount || 0);
   const totalNA = qaTotalNA + (safetyResult?.naCount || 0) + (fsdsResult?.naCount || 0);
-  const overallRate = (totalS + totalU) > 0 ? (totalS / (totalS + totalU) * 100) : null;
+  // 종합 적합률 = 영역(품질/안전/FSDS) 적합률의 단순평균. 미실시 영역(null)은 분모에서 제외.
+  // 본부별 점검표 항목 수 차이로 인한 비교 불공평 방지 (v19.15.0).
+  const _areaRates = [qaRate, safetyResult?.complianceRate, fsdsResult?.complianceRate]
+    .filter(v => v !== null && v !== undefined && !isNaN(v));
+  const overallRate = _areaRates.length > 0 ? _areaRates.reduce((a, b) => a + b, 0) / _areaRates.length : null;
 
   // 심사원/기간
   const firstRec = records[0];
@@ -13395,7 +13399,10 @@ function gatherDivisionData(year, division) {
         const rec = prevRecs.find(r => r.type === fsdsType);
         if (rec) { const r = calculateBinaryScores(rec.scores, getChecklist(fsdsType)); prevFsdsRate = r.complianceRate; pS += r.yesCount; pU += r.noCount; }
       }
-      prevOverallRate = (pS + pU) > 0 ? (pS / (pS + pU) * 100) : null;
+      // 종합(직전): 영역 단순평균 (현재 연도와 동일 정책, v19.15.0)
+      const _prevAreaRates = [prevQaRate, prevSafetyRate, prevFsdsRate]
+        .filter(v => v !== null && v !== undefined && !isNaN(v));
+      prevOverallRate = _prevAreaRates.length > 0 ? _prevAreaRates.reduce((a, b) => a + b, 0) / _prevAreaRates.length : null;
       break;
     }
   }
