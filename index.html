@@ -1499,7 +1499,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.15.0',
+  version: '19.15.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -13598,7 +13598,8 @@ function renderDivBarChart(d) {
       data: [d.prevQaRate || 0, d.prevSafetyRate || 0, d.prevFsdsRate || 0],
       borderColor: '#565A5B', backgroundColor: 'rgba(86,90,91,0.15)', borderWidth: 2, borderDash: [5, 3],
       pointBackgroundColor: '#565A5B', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, fill: false, tension: 0.3, order: 0,
-      datalabels: { display: true, color: '#fff', font: { size: 11, weight: '700' }, anchor: 'center', align: 'center', formatter: (v) => v ? v.toFixed(1) + '%' : '' }
+      // v19.15.1: 직전 라벨을 막대 안쪽 아래로 이동 (금번 라벨과 위치 충돌 방지)
+      datalabels: { display: true, color: '#fff', font: { size: 11, weight: '700' }, anchor: 'center', align: 'bottom', offset: 8, formatter: (v) => v ? v.toFixed(1) + '%' : '' }
     });
   }
   datasets.push({
@@ -13610,7 +13611,8 @@ function renderDivBarChart(d) {
     type: 'bar', data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      layout: { padding: { top: 18 } },
+      // v19.15.1: padding top 18→28 (100% 막대 위 데이터 라벨 짤림 방지)
+      layout: { padding: { top: 28 } },
       scales: { y: { min: 0, max: 100, ticks: { stepSize: 25, font: { size: 12 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.25)' } }, x: { grid: { display: false }, ticks: { font: { size: 12, weight: '500' }, color: '#303A3C' } } },
       plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 14, padding: 12 } }, datalabels: { display: false } }
     },
