@@ -1499,7 +1499,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.3</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.15.2',
+  version: '19.15.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3986,34 +3986,58 @@ async function createNewUser() {
   const resultEl = document.getElementById('newUserResult');
   if (!empNo || empNo.length !== 7) { resultEl.innerHTML = '<span style="color:#D20015;">사번 7자리를 입력해주세요.</span>'; return; }
   if (!name) { resultEl.innerHTML = '<span style="color:#D20015;">이름을 입력해주세요.</span>'; return; }
-  // 임시 비밀번호 생성
+  // 임시 비밀번호 생성 (사번 끝 4자리 + 00 = 6자, Firebase Auth 최소 길이 충족)
   const tempPw = empNo.slice(-4) + '00';
-  const adminEmail = currentUser.empNo + AUTH_DOMAIN;
   const adminPwEl = document.getElementById('newUserAdminPw');
   const adminPwPrompt = adminPwEl ? adminPwEl.value : '';
   if (!adminPwPrompt) { resultEl.innerHTML = '<span style="color:#D20015;">관리자 비밀번호를 입력해주세요.</span>'; return; }
+
+  // v19.15.3: Secondary Firebase App Instance 패턴
+  // 메인 admin 세션을 건드리지 않고 보조 app으로만 신규 계정 생성.
+  // 기존 createUser→adminReSignIn 시퀀스가 Firebase Auth 내부 token refresh와 충돌해
+  // 'auth/invalid-login-credentials' 회귀하던 문제 해결.
+  // admin 비밀번호는 Console 우회 방지를 위해 본인 인증용으로 reauthenticate에 사용.
+  let secondaryApp = null;
   try {
     resultEl.innerHTML = '<span style="color:#9EA2A1;">생성 중...</span>';
-    // createUser 시 자동 로그인 방지 플래그
-    _suppressAuthRedirect = true;
-    try {
-      const cred = await firebaseAuth.createUserWithEmailAndPassword(empNoToEmail(empNo), tempPw);
-      await dbRef('users/' + cred.user.uid).set({
-        empNo, name, role, createdAt: new Date().toISOString().slice(0,10), mustChangePassword: true
-      });
-      // admin으로 재로그인
-      await firebaseAuth.signInWithEmailAndPassword(adminEmail, adminPwPrompt);
-    } finally {
-      _suppressAuthRedirect = false;
-    }
+
+    // 1. 관리자 본인 재인증 (admin 비밀번호 검증) — 메인 세션은 그대로
+    const adminUser = firebaseAuth.currentUser;
+    if (!adminUser) throw new Error('관리자 세션이 없습니다. 다시 로그인해주세요.');
+    const adminCred = firebase.auth.EmailAuthProvider.credential(adminUser.email, adminPwPrompt);
+    await adminUser.reauthenticateWithCredential(adminCred);
+
+    // 2. 보조 Firebase app 인스턴스로 신규 계정 생성 (메인 admin auth 영향 없음)
+    const secondaryName = 'userCreator_' + Date.now();
+    secondaryApp = firebase.initializeApp(firebaseApp.options, secondaryName);
+    const secondaryAuth = secondaryApp.auth();
+    const cred = await secondaryAuth.createUserWithEmailAndPassword(empNoToEmail(empNo), tempPw);
+
+    // 3. RTDB users/{uid} 레코드 작성 — 메인 db ref(admin 권한)로 작성
+    await dbRef('users/' + cred.user.uid).set({
+      empNo, name, role, createdAt: new Date().toISOString().slice(0,10), mustChangePassword: true
+    });
+
+    // 4. 보조 app 정리 (sign out + delete)
+    await secondaryAuth.signOut();
+    await secondaryApp.delete();
+    secondaryApp = null;
+
+    // 5. 입력 폼 초기화 + 안내
     if (adminPwEl) adminPwEl.value = '';
     document.getElementById('newUserEmpNo').value = '';
     document.getElementById('newUserName').value = '';
-    // 임시 비밀번호를 alert로 안내 (닫기 전까지 유지)
     alert(`✓ ${name}(${empNo}) 계정이 생성되었습니다.\n\n임시 비밀번호: ${tempPw}\n\n사용자에게 전달해주세요.\n최초 로그인 시 비밀번호 변경이 필요합니다.`);
     renderUserManagement();
   } catch(e) {
+    // 보조 app 정리 보장 (실패 경로)
+    if (secondaryApp) {
+      try { await secondaryApp.delete(); } catch(_) {}
+    }
     if (e.code === 'auth/email-already-in-use') resultEl.innerHTML = '<span style="color:#D20015;">이미 등록된 사번입니다.</span>';
+    else if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-login-credentials' || e.code === 'auth/invalid-credential') resultEl.innerHTML = '<span style="color:#D20015;">관리자 비밀번호가 올바르지 않습니다.</span>';
+    else if (e.code === 'auth/weak-password') resultEl.innerHTML = '<span style="color:#D20015;">임시 비밀번호가 너무 약합니다. (사번 끝 4자리 + 00)</span>';
+    else if (e.code === 'auth/too-many-requests') resultEl.innerHTML = '<span style="color:#D20015;">잠시 후 다시 시도해주세요. (요청 과다)</span>';
     else resultEl.innerHTML = `<span style="color:#D20015;">생성 실패: ${e.message || ''}</span>`;
   }
 }
