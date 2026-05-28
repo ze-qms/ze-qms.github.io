@@ -1499,7 +1499,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.15.3</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.16.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.15.3',
+  version: '19.16.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3992,7 +3992,7 @@ async function createNewUser() {
   const adminPwPrompt = adminPwEl ? adminPwEl.value : '';
   if (!adminPwPrompt) { resultEl.innerHTML = '<span style="color:#D20015;">관리자 비밀번호를 입력해주세요.</span>'; return; }
 
-  // v19.15.3: Secondary Firebase App Instance 패턴
+  // v19.16.1: Secondary Firebase App Instance 패턴
   // 메인 admin 세션을 건드리지 않고 보조 app으로만 신규 계정 생성.
   // 기존 createUser→adminReSignIn 시퀀스가 Firebase Auth 내부 token refresh와 충돌해
   // 'auth/invalid-login-credentials' 회귀하던 문제 해결.
@@ -12280,6 +12280,9 @@ function loadCarDataFromFirebase() {
 function _memoStationKey(station) { return String(station || '').replace(/[\/\.#$\[\]]/g, '_'); }
 function makeMemoId() { return 'memo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
 function makeCheckItemId() { return 'ci_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+// v19.16.1: 체크리스트 항목에 붙일 수 있는 커스텀 이모지 팔레트
+const MEMO_EMOJIS = ['❗','⭐','✈️','⚠️','✅','🔥','📌','🎯'];
+const MEMO_ITEM_KINDS = { ITEM: 'item', H1: 'heading1', H2: 'heading2' };
 
 function loadMemos(year, station) {
   // 단일 (year, station) 메모 맵 — { memoId: memo }
@@ -12353,13 +12356,25 @@ function saveMemo(memoInput) {
     // v19.11.2: 체크리스트 제목 제거 — 항상 빈 값 (UI에서 표시 안 함)
     memo.title = '';
     if (!Array.isArray(memo.items)) memo.items = [];
-    memo.items = memo.items.filter(it => it && (it.text || '').toString().trim()).map(it => ({
-      id: it.id || makeCheckItemId(),
-      text: it.text.toString().trim(),
-      checked: !!it.checked,
-      checkedAt: it.checked ? (it.checkedAt || now) : null
-    }));
-    if (memo.items.length === 0) { showToast('체크리스트 항목을 1개 이상 추가해주세요.', 'error'); return null; }
+    // v19.16.1: kind('item'|'heading1'|'heading2') + emoji 필드 보존
+    memo.items = memo.items.filter(it => it && (it.text || '').toString().trim()).map(it => {
+      const kind = (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item';
+      const emoji = (typeof it.emoji === 'string' && it.emoji) ? it.emoji : '';
+      const out = {
+        id: it.id || makeCheckItemId(),
+        text: it.text.toString().trim(),
+        kind: kind,
+        emoji: emoji
+      };
+      if (kind === 'item') {
+        out.checked = !!it.checked;
+        out.checkedAt = it.checked ? (it.checkedAt || now) : null;
+      }
+      return out;
+    });
+    // v19.16.1: 헤더만 있고 실제 item이 없으면 차단
+    const itemRows = memo.items.filter(it => (it.kind || 'item') === 'item');
+    if (itemRows.length === 0) { showToast('체크리스트 항목(체크박스)을 1개 이상 추가해주세요.', 'error'); return null; }
     delete memo.content;
   }
 
@@ -12651,22 +12666,42 @@ function _renderMemoCard(memo, opts) {
     body = `<div style="font-size:16px;color:#1a1c1d;line-height:1.6;white-space:pre-wrap;word-break:break-word;letter-spacing:-0.2px;">${_esc(memo.content || '')}</div>`;
   } else {
     const items = memo.items || [];
-    const checked = items.filter(it => it.checked).length;
-    const total = items.length;
+    // v19.16.1: 헤더(kind=heading1/2) 제외, 실제 체크박스 항목만 진행률 계산
+    const itemRows = items.filter(it => (it.kind || 'item') === 'item');
+    const checked = itemRows.filter(it => it.checked).length;
+    const total = itemRows.length;
     const pct = total ? Math.round(checked / total * 100) : 0;
-    body = `<div style="font-size:13px;font-weight:700;color:#565A5B;margin-bottom:10px;letter-spacing:-0.2px;">사전 확인 <span style="color:${pct===100?'#16a34a':'#D20015'};">${checked}/${total}</span> · ${pct}%</div>`;
+    // v19.16.1: 진행률 헤더에 일괄 메뉴(⋯) 부착 (본인 메모만)
+    const bulkBtn = isMine
+      ? `<button onclick="onMemoBulkMenu(event, ${memo.year},'${_esc(memo.station)}','${memo.id}')" title="일괄 작업" style="background:none;border:none;color:#9EA2A1;font-size:18px;font-weight:700;cursor:pointer;padding:2px 8px;border-radius:6px;line-height:1;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.06)'" onmouseout="this.style.background='none'">⋯</button>`
+      : '';
+    body = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:13px;font-weight:700;color:#565A5B;letter-spacing:-0.2px;">사전 확인 <span style="color:${pct===100?'#16a34a':'#D20015'};">${checked}/${total}</span> · ${pct}%</span>${bulkBtn}</div>`;
     body += '<div style="background:rgba(0,0,0,0.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:14px;"><div style="background:linear-gradient(135deg,#22C55E,#16a34a);height:100%;width:' + pct + '%;transition:width 0.3s;"></div></div>';
-    body += '<div style="display:flex;flex-direction:column;gap:10px;">';
+    body += '<div style="display:flex;flex-direction:column;gap:8px;">';
     items.forEach(it => {
-      const canCheck = isMine;
-      body += `<label style="display:flex;align-items:flex-start;gap:12px;cursor:${canCheck?'pointer':'default'};font-size:15px;line-height:1.5;${it.checked?'color:#9EA2A1;text-decoration:line-through;':'color:#1a1c1d;'}">`;
-      body += `<input type="checkbox" ${it.checked?'checked':''} ${canCheck?'':'disabled'} ${canCheck?`onchange="onMemoChecklistToggle(${memo.year},'${_esc(memo.station)}','${memo.id}','${it.id}')"`:''} style="margin-top:3px;flex-shrink:0;width:18px;height:18px;cursor:${canCheck?'pointer':'default'};accent-color:#D20015;">`;
-      body += `<span style="word-break:break-word;letter-spacing:-0.2px;">${_esc(it.text)}</span></label>`;
+      const kind = it.kind || 'item';
+      const emojiPrefix = it.emoji ? `<span style="margin-right:6px;">${it.emoji}</span>` : '';
+      if (kind === 'heading1') {
+        // 큰 제목 — 굵게, 상단 구분선
+        body += `<div style="font-size:17px;font-weight:700;color:#1a1c1d;margin:10px 0 2px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.08);letter-spacing:-0.3px;word-break:break-word;">${emojiPrefix}${_esc(it.text)}</div>`;
+      } else if (kind === 'heading2') {
+        // 소제목 — 회색·중간 굵기
+        body += `<div style="font-size:15px;font-weight:600;color:#6E7273;margin:4px 0 0;letter-spacing:-0.2px;word-break:break-word;">${emojiPrefix}${_esc(it.text)}</div>`;
+      } else {
+        const canCheck = isMine;
+        body += `<label style="display:flex;align-items:flex-start;gap:12px;cursor:${canCheck?'pointer':'default'};font-size:15px;line-height:1.5;${it.checked?'color:#9EA2A1;text-decoration:line-through;':'color:#1a1c1d;'}">`;
+        body += `<input type="checkbox" ${it.checked?'checked':''} ${canCheck?'':'disabled'} ${canCheck?`onchange="onMemoChecklistToggle(${memo.year},'${_esc(memo.station)}','${memo.id}','${it.id}')"`:''} style="margin-top:3px;flex-shrink:0;width:18px;height:18px;cursor:${canCheck?'pointer':'default'};accent-color:#D20015;">`;
+        body += `<span style="word-break:break-word;letter-spacing:-0.2px;">${emojiPrefix}${_esc(it.text)}</span></label>`;
+      }
     });
     body += '</div>';
   }
 
   let actions = '';
+  // v19.16.1: 체크리스트는 그룹웨어 클립보드 복사 버튼 추가
+  if (memo.type === 'checklist') {
+    actions += `<button onclick="copyMemoToClipboard(${memo.year},'${_esc(memo.station)}','${memo.id}')" title="그룹웨어용 텍스트로 복사" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">📋 복사</button>`;
+  }
   if (isMine) {
     actions += `<button onclick="onMemoEdit('${memo.id}','${memo.year}','${_esc(memo.station)}')" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">수정</button>`;
   }
@@ -12705,12 +12740,33 @@ function _draftFormHTML(idPrefix) {
   ).join('');
 
   // v19.11.3: 작업창 입력 폼 — Notion 스타일, 폰트 키움
-  const itemsHTMLws = (s.draftItems || []).map((it, i) =>
-    `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-      <input type="text" class="apple-input" placeholder="확인 항목 입력" value="${_esc(it.text)}" oninput="memoWorkspaceState.draftItems[${i}].text=this.value;" style="flex:1;padding:11px 14px;font-size:15px;">
-      <button onclick="onMemoDraftRemoveItem(${i})" style="background:none;border:none;color:#9EA2A1;font-size:22px;cursor:pointer;padding:6px 10px;border-radius:8px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)';this.style.color='#D20015'" onmouseout="this.style.background='none';this.style.color='#9EA2A1'">×</button>
-    </div>`
-  ).join('');
+  // v19.16.1: 그립 핸들·↑↓ 이동·이모지 토글·kind별 placeholder/스타일 추가
+  // v19.16.1: row 컴팩트화 — input padding 8px 11px, 보조 컨트롤 축소, row 컨테이너 padding 제거
+  const lastIdx = (s.draftItems || []).length - 1;
+  const itemsHTMLws = (s.draftItems || []).map((it, i) => {
+    const kind = it.kind || 'item';
+    const emoji = it.emoji || '';
+    const ph = kind === 'heading1' ? '큰 제목 (섹션)' : (kind === 'heading2' ? '소제목' : '확인 항목 입력');
+    const inputStyle = kind === 'heading1'
+      ? 'flex:1;padding:8px 11px;font-size:16px;font-weight:700;color:#1a1c1d;letter-spacing:-0.3px;'
+      : (kind === 'heading2'
+        ? 'flex:1;padding:8px 11px;font-size:14px;font-weight:600;color:#6E7273;letter-spacing:-0.2px;'
+        : 'flex:1;padding:8px 11px;font-size:14px;');
+    const upDisabled = i === 0 ? 'opacity:0.3;cursor:not-allowed;' : '';
+    const dnDisabled = i === lastIdx ? 'opacity:0.3;cursor:not-allowed;' : '';
+    const emojiBtnLabel = emoji ? emoji : '🙂';
+    const emojiBtnOpacity = emoji ? '1' : '0.45';
+    return `<div class="memo-draft-row" data-idx="${i}" draggable="true" ondragstart="onMemoDraftDragStart(event, ${i})" ondragover="onMemoDraftDragOver(event, ${i})" ondragleave="onMemoDraftDragLeave(event, ${i})" ondrop="onMemoDraftDrop(event, ${i})" ondragend="onMemoDraftDragEnd(event)" style="display:flex;gap:4px;align-items:center;margin-bottom:4px;border-radius:8px;border:1px solid transparent;transition:border-color 0.15s,background 0.15s;">
+      <span title="드래그하여 이동" style="cursor:grab;color:#C0CED1;font-size:14px;padding:0 2px;user-select:none;line-height:1;">⋮⋮</span>
+      <div style="display:flex;flex-direction:column;gap:0;flex-shrink:0;">
+        <button onclick="onMemoDraftMove(${i}, -1)" ${i===0?'disabled':''} title="위로" style="${upDisabled}background:none;border:none;color:#6E7273;font-size:10px;cursor:pointer;padding:0 3px;line-height:1.1;">▲</button>
+        <button onclick="onMemoDraftMove(${i}, 1)" ${i===lastIdx?'disabled':''} title="아래로" style="${dnDisabled}background:none;border:none;color:#6E7273;font-size:10px;cursor:pointer;padding:0 3px;line-height:1.1;">▼</button>
+      </div>
+      <button onclick="onMemoDraftToggleEmoji(event, ${i})" title="이모지 선택" style="background:rgba(0,0,0,0.04);border:none;font-size:14px;cursor:pointer;padding:3px 6px;border-radius:6px;opacity:${emojiBtnOpacity};flex-shrink:0;line-height:1;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.08)';this.style.opacity='1'" onmouseout="this.style.background='rgba(0,0,0,0.04)';this.style.opacity='${emojiBtnOpacity}'">${emojiBtnLabel}</button>
+      <input type="text" class="apple-input memo-draft-input" data-idx="${i}" placeholder="${ph}" value="${_esc(it.text)}" oninput="memoWorkspaceState.draftItems[${i}].text=this.value;" onkeydown="onMemoDraftItemKey(event, ${i})" style="${inputStyle}">
+      <button onclick="onMemoDraftRemoveItem(${i})" title="삭제" style="background:none;border:none;color:#9EA2A1;font-size:18px;cursor:pointer;padding:3px 7px;border-radius:6px;transition:all 0.15s;flex-shrink:0;line-height:1;" onmouseover="this.style.background='rgba(210,0,21,0.08)';this.style.color='#D20015'" onmouseout="this.style.background='none';this.style.color='#9EA2A1'">×</button>
+    </div>`;
+  }).join('');
 
   // v19.11.4: 워크스페이스 토글도 세그먼티드 컨트롤로 (큰 사이즈 버전)
   const wsSegActive = 'background:#fff;color:#1a1c1d;box-shadow:0 1px 3px rgba(0,0,0,0.1);font-weight:600;';
@@ -12753,7 +12809,12 @@ function _draftFormHTML(idPrefix) {
       ? `<div class="mb-4">
           <label class="apple-label" style="font-size:13px;">사전 확인 항목</label>
           <div id="${idPrefix}_items">${itemsHTMLws}</div>
-          <button onclick="onMemoDraftAddItem('${idPrefix}')" class="pill-btn pill-btn-outline" style="font-size:14px;padding:9px 18px;margin-top:6px;">+ 항목 추가</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <button onclick="onMemoDraftAddItem('${idPrefix}','item')" class="pill-btn pill-btn-outline" style="font-size:14px;padding:9px 16px;">+ 항목</button>
+            <button onclick="onMemoDraftAddItem('${idPrefix}','heading1')" class="pill-btn pill-btn-outline" style="font-size:14px;padding:9px 16px;">+ 큰 제목</button>
+            <button onclick="onMemoDraftAddItem('${idPrefix}','heading2')" class="pill-btn pill-btn-outline" style="font-size:14px;padding:9px 16px;">+ 소제목</button>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:#9EA2A1;">⌃ Enter로 항목 빠르게 추가 · ⋮⋮ 드래그/▲▼로 순서 변경 · 🙂 이모지로 강조</div>
          </div>`
       : `<div class="mb-4">
           <label class="apple-label" style="font-size:13px;">내용</label>
@@ -12836,12 +12897,151 @@ function _renderMemoWorkspaceInner(el) {
 function onMemoDraftType(t) { memoWorkspaceState.draftType = t; if (t === 'checklist') memoWorkspaceState.draftVisibility = 'private'; renderMemoWorkspace(); }
 function onMemoDraftVisibility(v) { if (memoWorkspaceState.draftType === 'checklist') return; memoWorkspaceState.draftVisibility = v; renderMemoWorkspace(); }
 function onMemoDraftScopeType(t) { memoWorkspaceState.draftScopeType = t; memoWorkspaceState.draftStation = ''; renderMemoWorkspace(); }
-function onMemoDraftAddItem(prefix) {
-  memoWorkspaceState.draftItems.push({ tempId: makeCheckItemId(), text: '' });
+// v19.16.1: kind 인자 추가 ('item' | 'heading1' | 'heading2'). 누락 시 'item'.
+function onMemoDraftAddItem(prefix, kind) {
+  const k = (kind === 'heading1' || kind === 'heading2') ? kind : 'item';
+  memoWorkspaceState.draftItems.push({ tempId: makeCheckItemId(), text: '', kind: k, emoji: '' });
   renderMemoWorkspace();
+  // 새로 추가된 input에 자동 포커스 (다음 frame)
+  setTimeout(() => {
+    try {
+      const inputs = document.querySelectorAll('.memo-draft-input');
+      if (inputs && inputs.length) inputs[inputs.length - 1].focus();
+    } catch(e) {}
+  }, 0);
 }
 function onMemoDraftRemoveItem(idx) {
   memoWorkspaceState.draftItems.splice(idx, 1);
+  renderMemoWorkspace();
+}
+
+// v19.16.1: 항목 위/아래 1칸 이동
+function onMemoDraftMove(idx, dir) {
+  const arr = memoWorkspaceState.draftItems;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  const tmp = arr[idx];
+  arr[idx] = arr[newIdx];
+  arr[newIdx] = tmp;
+  renderMemoWorkspace();
+}
+
+// v19.16.1: HTML5 Drag and Drop — draftItems 순서 변경
+let _memoDragFromIdx = null;
+function onMemoDraftDragStart(ev, idx) {
+  _memoDragFromIdx = idx;
+  try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(idx)); } catch(e) {}
+  try { ev.currentTarget.style.opacity = '0.4'; } catch(e) {}
+}
+function onMemoDraftDragOver(ev, idx) {
+  ev.preventDefault();
+  try { ev.dataTransfer.dropEffect = 'move'; } catch(e) {}
+  try {
+    if (_memoDragFromIdx === null || _memoDragFromIdx === idx) return;
+    ev.currentTarget.style.borderColor = '#D20015';
+    ev.currentTarget.style.background = 'rgba(210,0,21,0.04)';
+  } catch(e) {}
+}
+function onMemoDraftDragLeave(ev, idx) {
+  try {
+    ev.currentTarget.style.borderColor = 'transparent';
+    ev.currentTarget.style.background = 'transparent';
+  } catch(e) {}
+}
+function onMemoDraftDrop(ev, toIdx) {
+  ev.preventDefault();
+  try { ev.currentTarget.style.borderColor = 'transparent'; ev.currentTarget.style.background = 'transparent'; } catch(e) {}
+  const fromIdx = _memoDragFromIdx;
+  _memoDragFromIdx = null;
+  if (fromIdx === null || fromIdx === toIdx) { renderMemoWorkspace(); return; }
+  const arr = memoWorkspaceState.draftItems;
+  if (fromIdx < 0 || fromIdx >= arr.length || toIdx < 0 || toIdx >= arr.length) return;
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  renderMemoWorkspace();
+}
+function onMemoDraftDragEnd(ev) {
+  _memoDragFromIdx = null;
+  try {
+    document.querySelectorAll('.memo-draft-row').forEach(el => {
+      el.style.opacity = '1';
+      el.style.borderColor = 'transparent';
+      el.style.background = 'transparent';
+    });
+  } catch(e) {}
+}
+
+// v19.16.1: 항목 input keydown — Enter로 다음 빈 row 자동 추가 + 포커스
+function onMemoDraftItemKey(ev, idx) {
+  if (ev.key !== 'Enter') return;
+  ev.preventDefault();
+  const arr = memoWorkspaceState.draftItems;
+  const cur = arr[idx];
+  // 현재 row가 비어있으면 새 row 추가 무시 (빈 row 누적 방지)
+  if (!cur || !cur.text || !cur.text.trim()) return;
+  const kind = (cur.kind === 'heading1' || cur.kind === 'heading2') ? 'item' : (cur.kind || 'item');
+  // 헤더에서 Enter는 다음 row를 'item'으로 (헤더는 한 번에 한 줄이 자연)
+  arr.splice(idx + 1, 0, { tempId: makeCheckItemId(), text: '', kind: kind, emoji: '' });
+  renderMemoWorkspace();
+  setTimeout(() => {
+    try {
+      const inputs = document.querySelectorAll('.memo-draft-input');
+      const next = inputs[idx + 1];
+      if (next) next.focus();
+    } catch(e) {}
+  }, 0);
+}
+
+// v19.16.1: 이모지 팝오버 토글 — 항목 좌측 이모지 버튼 클릭
+function onMemoDraftToggleEmoji(ev, idx) {
+  ev.stopPropagation();
+  // 기존 팝오버 제거
+  const old = document.getElementById('memoEmojiPopover');
+  if (old) old.remove();
+  const cur = memoWorkspaceState.draftItems[idx];
+  if (!cur) return;
+  const popover = document.createElement('div');
+  popover.id = 'memoEmojiPopover';
+  popover.style.cssText = 'position:fixed;background:#fff;border:1px solid rgba(0,0,0,0.1);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:10px;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;max-width:260px;';
+  const btnStyle = 'background:rgba(0,0,0,0.04);border:none;font-size:20px;cursor:pointer;padding:8px 10px;border-radius:8px;transition:background 0.15s;line-height:1;';
+  MEMO_EMOJIS.forEach(em => {
+    const b = document.createElement('button');
+    b.innerHTML = em;
+    b.title = em;
+    b.style.cssText = btnStyle;
+    b.onmouseover = () => b.style.background = 'rgba(0,0,0,0.10)';
+    b.onmouseout = () => b.style.background = 'rgba(0,0,0,0.04)';
+    b.onclick = (e) => { e.stopPropagation(); onMemoDraftSetEmoji(idx, em); popover.remove(); };
+    popover.appendChild(b);
+  });
+  const clear = document.createElement('button');
+  clear.innerHTML = '✕ 없음';
+  clear.style.cssText = 'background:none;border:1px solid rgba(0,0,0,0.1);font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;border-radius:8px;margin-left:4px;';
+  clear.onclick = (e) => { e.stopPropagation(); onMemoDraftSetEmoji(idx, ''); popover.remove(); };
+  popover.appendChild(clear);
+  document.body.appendChild(popover);
+  // 위치 — 클릭한 버튼 아래
+  try {
+    const rect = ev.currentTarget.getBoundingClientRect();
+    let top = rect.bottom + 6;
+    let left = rect.left;
+    // viewport 우측 넘침 보정
+    const pw = popover.offsetWidth || 260;
+    if (left + pw > window.innerWidth - 10) left = window.innerWidth - pw - 10;
+    if (top + 60 > window.innerHeight) top = rect.top - 60;
+    popover.style.top = top + 'px';
+    popover.style.left = left + 'px';
+  } catch(e) {}
+  // 바깥 클릭 시 닫기
+  const closeFn = (e) => {
+    if (!popover.contains(e.target)) { popover.remove(); document.removeEventListener('mousedown', closeFn, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', closeFn, true), 0);
+}
+function onMemoDraftSetEmoji(idx, emoji) {
+  const cur = memoWorkspaceState.draftItems[idx];
+  if (!cur) return;
+  cur.emoji = emoji || '';
   renderMemoWorkspace();
 }
 function onMemoDraftReset() {
@@ -12867,7 +13067,24 @@ function onMemoDraftSave() {
     visibility: s.draftVisibility
   };
   if (s.draftType === 'note') memo.content = s.draftContent;
-  else { memo.title = s.draftTitle; memo.items = s.draftItems.map(it => ({ id: makeCheckItemId(), text: it.text, checked: false })); }
+  else {
+    memo.title = s.draftTitle;
+    // v19.16.1: 수정 모드(originalId 보존)면 id 재사용 + checked/kind/emoji 유지
+    memo.items = s.draftItems.map(it => {
+      const obj = {
+        id: it.originalId || makeCheckItemId(),
+        text: it.text,
+        kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
+        emoji: (typeof it.emoji === 'string') ? it.emoji : ''
+      };
+      if (obj.kind === 'item') {
+        obj.checked = !!it.checked;
+        if (it.checked && it.checkedAt) obj.checkedAt = it.checkedAt;
+      }
+      return obj;
+    });
+  }
+  if (s._editingId) memo.id = s._editingId;
   const saved = saveMemo(memo);
   if (saved) {
     showToast('저장되었습니다.', 'success');
@@ -12891,6 +13108,156 @@ function onMemoChecklistToggle(year, station, memoId, itemId) {
   if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 2 || inputPhase === 4)) renderMemoSidePanel();
   if (typeof updateMemoBadge === 'function') updateMemoBadge();
 }
+
+// v19.16.1: 체크리스트 → 그룹웨어 호환 텍스트 클립보드 복사
+async function copyMemoToClipboard(year, station, memoId) {
+  const memos = loadMemos(year, station);
+  const memo = memos[memoId];
+  if (!memo) { showToast('메모를 찾을 수 없습니다.', 'error'); return; }
+  if (memo.type !== 'checklist') { showToast('체크리스트만 복사할 수 있습니다.', 'error'); return; }
+  const items = memo.items || [];
+  const lines = [];
+  lines.push(`[${memo.year}] ${memo.station} — 사전 확인 체크리스트`);
+  lines.push('');
+  items.forEach(it => {
+    const kind = it.kind || 'item';
+    const em = it.emoji ? (it.emoji + ' ') : '';
+    if (kind === 'heading1') {
+      lines.push('');
+      lines.push(`■ ${em}${it.text}`);
+    } else if (kind === 'heading2') {
+      lines.push(`  ▶ ${em}${it.text}`);
+    } else {
+      const mark = it.checked ? '☑' : '□';
+      lines.push(`    ${mark} ${em}${it.text}`);
+    }
+  });
+  const text = lines.join('\n');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // 폴백 — execCommand
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast('클립보드에 복사되었습니다.', 'success');
+  } catch (e) {
+    console.warn('Clipboard copy failed:', e);
+    showToast('복사 실패 — 권한을 확인해주세요.', 'error');
+  }
+}
+
+// v19.16.1: 일괄 작업 메뉴 토글 (모두 체크 / 모두 해제 / 완료 항목 제거)
+function onMemoBulkMenu(ev, year, station, memoId) {
+  ev.stopPropagation();
+  const old = document.getElementById('memoBulkMenu');
+  if (old) { old.remove(); return; }
+  const menu = document.createElement('div');
+  menu.id = 'memoBulkMenu';
+  menu.style.cssText = 'position:fixed;background:#fff;border:1px solid rgba(0,0,0,0.1);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:6px;z-index:9999;min-width:160px;';
+  const itemStyle = 'display:block;width:100%;background:none;border:none;text-align:left;font-size:14px;color:#1a1c1d;cursor:pointer;padding:10px 14px;border-radius:8px;transition:background 0.15s;';
+  const actions = [
+    { label: '☑ 모두 체크', op: 'checkAll' },
+    { label: '☐ 모두 해제', op: 'uncheckAll' },
+    { label: '🗑 완료 항목 제거', op: 'removeCompleted', danger: true }
+  ];
+  actions.forEach(a => {
+    const b = document.createElement('button');
+    b.textContent = a.label;
+    b.style.cssText = itemStyle + (a.danger ? 'color:#D20015;' : '');
+    b.onmouseover = () => b.style.background = a.danger ? 'rgba(210,0,21,0.06)' : 'rgba(0,0,0,0.05)';
+    b.onmouseout = () => b.style.background = 'none';
+    b.onclick = (e) => { e.stopPropagation(); menu.remove(); bulkChecklistAction(year, station, memoId, a.op); };
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  try {
+    const rect = ev.currentTarget.getBoundingClientRect();
+    let top = rect.bottom + 6;
+    let left = rect.right - menu.offsetWidth;
+    if (left < 10) left = 10;
+    if (top + menu.offsetHeight > window.innerHeight) top = rect.top - menu.offsetHeight - 6;
+    menu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+  } catch(e) {}
+  const closeFn = (e) => {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', closeFn, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', closeFn, true), 0);
+}
+
+// v19.16.1: 일괄 체크/해제/완료 제거
+function bulkChecklistAction(year, station, memoId, op) {
+  if (!currentUser) { showToast('로그인이 필요합니다.', 'error'); return; }
+  const all = SafeStorage.get(MEMO_STORAGE_KEY, {});
+  const key = year + '_' + station;
+  const memo = all[key] && all[key][memoId];
+  if (!memo || memo.type !== 'checklist') { showToast('메모를 찾을 수 없습니다.', 'error'); return; }
+  const isOrphan = !memo.authorEmpNo;
+  const isMine = memo.authorEmpNo === currentUser.empNo || isOrphan;
+  if (!isMine) { showToast('권한이 없습니다.', 'error'); return; }
+  if (isOrphan) { memo.authorEmpNo = currentUser.empNo; memo.authorName = currentUser.name || currentUser.empNo; }
+  const now = new Date().toISOString();
+  let newItems;
+  if (op === 'checkAll') {
+    newItems = (memo.items || []).map(it => {
+      const kind = it.kind || 'item';
+      if (kind !== 'item') return it;
+      return Object.assign({}, it, { checked: true, checkedAt: it.checkedAt || now });
+    });
+  } else if (op === 'uncheckAll') {
+    newItems = (memo.items || []).map(it => {
+      const kind = it.kind || 'item';
+      if (kind !== 'item') return it;
+      return Object.assign({}, it, { checked: false, checkedAt: null });
+    });
+  } else if (op === 'removeCompleted') {
+    if (!confirm('완료 처리된 항목을 모두 제거하시겠습니까?')) return;
+    newItems = (memo.items || []).filter(it => {
+      const kind = it.kind || 'item';
+      if (kind !== 'item') return true; // 헤더는 보존
+      return !it.checked;
+    });
+    // 최소 item 1개 보장
+    const remaining = newItems.filter(it => (it.kind || 'item') === 'item');
+    if (remaining.length === 0) {
+      showToast('체크리스트에 항목이 1개 이상 남아있어야 합니다.', 'error');
+      return;
+    }
+  } else {
+    return;
+  }
+  memo.items = newItems;
+  memo.updatedAt = now;
+  memo._unsynced = true;
+  _setMemoLocal(year, station, memoId, memo);
+  // UI refresh
+  if (activeTab === 7) renderMemoWorkspace();
+  if (typeof renderMemoSidePanel === 'function' && activeTab === 1 && (inputPhase === 2 || inputPhase === 4)) renderMemoSidePanel();
+  if (typeof updateMemoBadge === 'function') updateMemoBadge();
+  // Firebase 전체 items 재push
+  if (firebaseDb) {
+    const stKey = _memoStationKey(station);
+    const ref = dbRef('memos/' + year + '/' + stKey + '/' + memoId);
+    if (ref) {
+      ref.update({ items: newItems, updatedAt: memo.updatedAt, authorEmpNo: memo.authorEmpNo, authorName: memo.authorName })
+        .then(() => {
+          delete memo._unsynced;
+          _setMemoLocal(year, station, memoId, memo);
+        })
+        .catch(e => console.warn('Bulk update RTDB failed (queued):', e && (e.code || e.message)));
+    }
+  }
+  const msg = op === 'checkAll' ? '모든 항목을 체크했습니다.' : (op === 'uncheckAll' ? '모든 체크를 해제했습니다.' : '완료 항목을 제거했습니다.');
+  showToast(msg, 'success');
+}
 function onMemoEdit(memoId, year, station) {
   const memos = loadMemos(year, station);
   const memo = memos[memoId];
@@ -12902,7 +13269,16 @@ function onMemoEdit(memoId, year, station) {
   memoWorkspaceState.draftStation = memo.station;
   memoWorkspaceState.draftContent = memo.content || '';
   memoWorkspaceState.draftTitle = memo.title || '';
-  memoWorkspaceState.draftItems = (memo.items || []).map(it => ({ tempId: it.id, text: it.text, originalId: it.id, checked: it.checked }));
+  // v19.16.1: kind('item'|'heading1'|'heading2') + emoji + checkedAt 보존
+  memoWorkspaceState.draftItems = (memo.items || []).map(it => ({
+    tempId: it.id,
+    originalId: it.id,
+    text: it.text,
+    checked: !!it.checked,
+    checkedAt: it.checkedAt || null,
+    kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
+    emoji: (typeof it.emoji === 'string') ? it.emoji : ''
+  }));
   // 기존 메모 삭제 후 새로 저장 패턴 단순화 — 사용자에게 알림 후 진행
   // 여기서는 "복사 후 수정"처럼 동작하지 않고 실제 갱신을 위해 ID를 보존해야 한다.
   // saveMemo는 id 있으면 갱신하므로, draft에 _editingId를 보관.
@@ -13206,7 +13582,23 @@ onMemoDraftSave = function() {
   };
   if (s._editingId) memo.id = s._editingId;
   if (s.draftType === 'note') memo.content = s.draftContent;
-  else { memo.title = s.draftTitle; memo.items = s.draftItems.map(it => ({ id: it.originalId || makeCheckItemId(), text: it.text, checked: !!it.checked })); }
+  else {
+    memo.title = s.draftTitle;
+    // v19.16.1: kind/emoji/checkedAt 보존
+    memo.items = s.draftItems.map(it => {
+      const obj = {
+        id: it.originalId || makeCheckItemId(),
+        text: it.text,
+        kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
+        emoji: (typeof it.emoji === 'string') ? it.emoji : ''
+      };
+      if (obj.kind === 'item') {
+        obj.checked = !!it.checked;
+        if (it.checked && it.checkedAt) obj.checkedAt = it.checkedAt;
+      }
+      return obj;
+    });
+  }
   const saved = saveMemo(memo);
   if (saved) {
     showToast('저장되었습니다.', 'success');
@@ -14252,6 +14644,12 @@ Object.assign(window, {
   onMemoQuickAddItem, onMemoQuickRemoveItem, onMemoQuickSave,
   onSDMemoOpenWorkspace, onHomeMemoQuickAdd,
   setSDMemoFilter, toggleSDMemoExpanded,
+  // v19.16.1: 체크리스트 강화 — 헤더/드래그/이모지/Enter/복사/일괄
+  onMemoDraftMove, onMemoDraftDragStart, onMemoDraftDragOver, onMemoDraftDragLeave,
+  onMemoDraftDrop, onMemoDraftDragEnd, onMemoDraftItemKey,
+  onMemoDraftToggleEmoji, onMemoDraftSetEmoji,
+  copyMemoToClipboard, onMemoBulkMenu, bulkChecklistAction,
+  MEMO_EMOJIS, MEMO_ITEM_KINDS,
 });
 // v19.11.0: state도 노출 (oninput에서 직접 mutate)
 window.memoWorkspaceState = (typeof memoWorkspaceState !== 'undefined') ? memoWorkspaceState : null;
