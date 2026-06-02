@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.18.2',
+  version: '19.18.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -14807,7 +14807,7 @@ function renderDivBarChart(d) {
   const datasets = [];
   // 금번(빨강) 막대 — 좌측
   datasets.push({
-    label: "금번('" + String(d.year).slice(-2) + ")", data: currData,
+    label: '금번심사', data: currData,
     backgroundColor: '#D20015', borderRadius: 4, barPercentage: 0.9, categoryPercentage: 0.7, order: 1,
     datalabels: dlOpts
   });
@@ -14816,7 +14816,7 @@ function renderDivBarChart(d) {
     const prevAvg = avgOf([d.prevQaRate, d.prevSafetyRate, d.prevFsdsRate]);
     const prevData = [prevAvg, d.prevQaRate || 0, d.prevSafetyRate || 0, d.prevFsdsRate || 0];
     datasets.push({
-      label: "직전('" + String(d.prevYear).slice(-2) + ")", data: prevData,
+      label: '직전심사', data: prevData,
       backgroundColor: '#3B82F6', borderRadius: 4, barPercentage: 0.9, categoryPercentage: 0.7, order: 1,
       datalabels: dlOpts
     });
