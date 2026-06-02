@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.18.1',
+  version: '19.18.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -15122,7 +15122,8 @@ function renderSDCarChart(carData) {
   const cats = getCarCategories(stationDetailStation);
   const prevData = cats.map(c => carData.previous?.[c] || 0);
   const currData = cats.map(c => carData.current?.[c] || 0);
-  const maxVal = Math.max(...prevData, ...currData, 3);
+  // v19.18.2: 축 max = 데이터 최대값 + 1 (이전엔 floor 3 보장이라 값이 작을 때 그래프가 작아 보임). 빈 데이터 방어용 0 floor만 유지
+  const maxVal = Math.max(...prevData, ...currData, 0);
   chartInstances['sdCarChart'] = new Chart(ctx, {
     type: 'bar',
     data: {
