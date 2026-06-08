@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.20.0',
+  version: '19.21.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -11385,14 +11385,25 @@ function renderHomeGreeting(currentYear, completedCount, totalCount) {
     summaryText = '올해 배정된 심사 일정이 없습니다';
   }
 
-  el.innerHTML = '<div style="padding:20px 24px;background:linear-gradient(135deg,#303A3C 0%,#1a2122 100%);border-radius:16px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">' +
-    '<div style="flex:1;min-width:220px;">' +
-      '<div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;">' + greeting + ', ' + (userName || '사용자') + '님</div>' +
-      '<div style="font-size:13px;color:rgba(255,255,255,0.6);font-weight:400;">' + summaryText + '</div>' +
-    '</div>' +
-    // v19.11.3: 메모 빠른 진입점 — 더 명시적, switchTab 직접 호출로 견고화
-    '<button onclick="window.switchTab && window.switchTab(7);" style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.28);border-radius:980px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex-shrink:0;letter-spacing:-0.2px;transition:all 0.15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.28)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.18)\'">📋 메모 작성</button>' +
-    '</div>';
+  // v19.21.0: 시간대별 배너 배경 — 오전(오로라 메쉬) / 오후·저녁(듀오톤+그레인+워터마크)
+  const isMorning = h < 12;
+  const bg = isMorning
+    ? `background-color:#B00012;background:radial-gradient(circle at 18% 35%, rgba(255,128,96,0.92) 0%, transparent 44%),radial-gradient(circle at 68% 22%, rgba(255,86,118,0.88) 0%, transparent 42%),radial-gradient(circle at 48% 92%, rgba(255,170,84,0.66) 0%, transparent 46%),radial-gradient(circle at 92% 68%, rgba(170,0,28,0.92) 0%, transparent 52%),linear-gradient(135deg, #D20015 0%, #7A000E 100%);`
+    : `background:linear-gradient(120deg, #D20015 0%, #5A1A1E 52%, #1F2526 100%);`;
+  const grainBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")`;
+  const overlay = isMorning ? '' : (
+    `<div style="position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0.06;mix-blend-mode:overlay;background-image:${grainBg};"></div>` +
+    `<svg viewBox="0 0 200 200" style="position:absolute;right:-28px;top:50%;transform:translateY(-50%) rotate(8deg);width:175px;height:175px;opacity:0.10;pointer-events:none;z-index:1;"><path d="M100 15C101 82 118 99 185 100C118 101 101 118 100 185C99 118 82 101 15 100C82 99 99 82 100 15Z" fill="#ffffff"/></svg>`
+  );
+  el.innerHTML =
+    `<div style="position:relative;overflow:hidden;padding:20px 24px;${bg}border-radius:16px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">` +
+      overlay +
+      `<div style="position:relative;z-index:3;flex:1;min-width:220px;">` +
+        `<div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;">${greeting}, ${userName || '사용자'}님</div>` +
+        `<div style="font-size:13px;color:rgba(255,255,255,0.62);font-weight:400;">${summaryText}</div>` +
+      `</div>` +
+      `<button onclick="window.switchTab && window.switchTab(7);" style="position:relative;z-index:3;background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.28);border-radius:980px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex-shrink:0;letter-spacing:-0.2px;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">📋 메모 작성</button>` +
+    `</div>`;
 }
 function onHomeMemoQuickAdd() {
   // 메모 작업창으로 이동 + 작성 폼 초기화
