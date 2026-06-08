@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.19.3',
+  version: '19.20.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8823,7 +8823,8 @@ function getScheduleStatusBadgeStyle(status) {
     in_progress: 'background:rgba(245,158,11,0.15);color:#F59E0B',
     upcoming: 'background:rgba(158,162,161,0.15);color:#9EA2A1',
     incomplete: 'background:rgba(59,130,246,0.15);color:#3B82F6',
-    overdue: 'background:rgba(210,0,21,0.15);color:#D20015'
+    overdue: 'background:rgba(210,0,21,0.15);color:#D20015',
+    tbd: 'background:rgba(245,158,11,0.15);color:#B45309'
   };
   return styles[status] || styles.upcoming;
 }
@@ -8839,6 +8840,8 @@ function getExpectedTypesForStation(station) {
 }
 
 function calcScheduleStatus(item) {
+  // 미정(일정 조정 중) — month 0
+  if (item.month === 0) return { status: 'tbd', label: '미정', count: 0, total: 0 };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const year = item.year;
@@ -9053,6 +9056,33 @@ function renderSchedule() {
         html += '</tr>';
       });
     }
+  }
+
+  // === 미정(일정 조정 중) 그룹 ===
+  const tbdItems = monthMap[0] || [];
+  const tbdBorder = 'border-top:2px solid #FCD9B6;';
+  const tbdCellStyle = `text-align:center;font-weight:700;font-size:15px;vertical-align:middle;${tbdBorder}background:rgba(245,158,11,0.1);color:#B45309;`;
+  if (tbdItems.length === 0) {
+    html += `<tr><td data-label="월" style="${tbdCellStyle}">미정</td><td data-label="대상" style="${tbdBorder}color:#C0CED1;font-size:13px;">일정 조정 중인 심사를 '일정 변경'에서 여기로 이동하세요</td><td data-label="심사원" style="${tbdBorder}color:#C0CED1;">-</td><td data-label="심사 기간" style="${tbdBorder}text-align:center;color:#C0CED1;">-</td><td data-label="상태" style="${tbdBorder}text-align:center;color:#C0CED1;">-</td></tr>`;
+  } else {
+    tbdItems.forEach((item, i) => {
+      const statusResult = calcScheduleStatus(item);
+      const dateStr = item.dateStart ? (item.dateEnd && item.dateEnd !== item.dateStart ? item.dateStart.substring(5) + ' ~ ' + item.dateEnd.substring(5) : item.dateStart.substring(5)) : '-';
+      const isDivision = !!DIVISIONS[item.station];
+      const isOutsourcing = item.auditTarget === 'outsourcing' || (item.region === '협력사(본사)');
+      const dotColor = isDivision ? '#6366F1' : isOutsourcing ? '#F59E0B' : '#22C55E';
+      const nameColor = isDivision ? 'color:#6366F1;' : isOutsourcing ? 'color:#F59E0B;' : '';
+      const dotHtml = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;vertical-align:middle;"></span>`;
+      const tb = (i === 0) ? tbdBorder : '';
+      html += `<tr style="cursor:pointer;" onclick="setSchedulePhase(2,'${item.id}')">`;
+      if (i === 0) html += `<td data-label="월" style="${tbdCellStyle}" rowspan="${tbdItems.length}">미정</td>`;
+      const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;" title="상세 보기">&#9654;</span>` : '';
+      html += `<td data-label="대상" style="${tb}font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
+      html += `<td data-label="심사원" style="${tb}font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
+      html += `<td data-label="심사 기간" style="${tb}text-align:center;font-size:12px;">${dateStr}</td>`;
+      html += `<td data-label="상태" style="${tb}text-align:center;"><span class="badge-pill" style="${getScheduleStatusBadgeStyle(statusResult.status)}">${statusResult.label}</span></td>`;
+      html += '</tr>';
+    });
   }
 
   html += '</tbody></table></div></div>';
@@ -9273,6 +9303,45 @@ function renderScheduleReorder() {
     html += `</div>`;
     html += `</div>`;
   }
+  // 미정(일정 조정 중) dropzone
+  const tbdReorderItems = monthMap[0] || [];
+  html += `<div class="apple-card month-dropzone-wrap" style="padding:12px;border:1.5px solid #FCD9B6;background:rgba(245,158,11,0.04);">`;
+  html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`;
+  html += `<div style="font-size:15px;font-weight:600;color:#B45309;letter-spacing:-0.24px;">미정</div>`;
+  html += `<div style="font-size:11px;color:#9EA2A1;">${tbdReorderItems.length}건</div>`;
+  html += `</div>`;
+  html += `<div class="month-dropzone" data-month="0" style="min-height:90px;padding:6px;border-radius:10px;background:#FFF7ED;border:1.5px dashed ${tbdReorderItems.length === 0 ? '#FCD9B6' : 'transparent'};transition:all 0.2s;">`;
+  if (tbdReorderItems.length === 0) {
+    html += `<div class="dropzone-placeholder" style="text-align:center;color:#C0A77D;font-size:11px;padding:24px 4px;pointer-events:none;">일정 조정 중인 심사를<br>여기로 이동</div>`;
+  } else {
+    tbdReorderItems.forEach(item => {
+      const st = calcScheduleStatus(item);
+      const isDivision = !!DIVISIONS[item.station];
+      const isOutsourcing = item.auditTarget === 'outsourcing' || (item.region === '협력사(본사)');
+      const dotColor = isDivision ? '#6366F1' : isOutsourcing ? '#F59E0B' : '#22C55E';
+      const dateStr = item.dateStart ? (item.dateEnd && item.dateEnd !== item.dateStart ? item.dateStart.substring(5) + ' ~ ' + item.dateEnd.substring(5) : item.dateStart.substring(5)) : '-';
+      const name = item.displayName || item.station || '(이름 없음)';
+      const snapItem = (window._scheduleReorderSnapshot || []).find(x => x.id === item.id);
+      const isMoved = snapItem && snapItem.month !== item.month;
+      const chipBorder = isMoved ? '2px solid #D20015' : '1px solid #E5E7EB';
+      const chipBg = isMoved ? '#FFF5F6' : '#fff';
+      html += `<div class="schedule-chip${isMoved ? ' schedule-chip-moved' : ''}" data-id="${item.id}" style="background:${chipBg};border:${chipBorder};border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,0.04);">`;
+      html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">`;
+      html += `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>`;
+      html += `<span style="font-size:12.5px;font-weight:600;color:#303A3C;letter-spacing:-0.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>`;
+      if (isMoved) {
+        html += `<span style="font-size:9.5px;font-weight:600;color:#fff;background:#D20015;padding:1px 6px;border-radius:980px;margin-left:auto;flex-shrink:0;">변경</span>`;
+      }
+      html += `</div>`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">`;
+      html += `<span style="font-size:10.5px;color:#9EA2A1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dateStr}</span>`;
+      html += `<span class="badge-pill" style="${getScheduleStatusBadgeStyle(st.status)};font-size:9.5px;padding:1px 6px;flex-shrink:0;">${st.label}</span>`;
+      html += `</div>`;
+      html += `</div>`;
+    });
+  }
+  html += `</div>`;
+  html += `</div>`;
   html += '</div>';
   html += '</div>';
 
@@ -9313,9 +9382,9 @@ function initScheduleDragDrop() {
   });
 }
 function handleChipDrop(evt) {
-  const newMonth = parseInt(evt.to && evt.to.dataset ? evt.to.dataset.month : '0', 10);
+  const newMonth = parseInt(evt.to && evt.to.dataset ? evt.to.dataset.month : '-1', 10);
   const id = evt.item && evt.item.dataset ? evt.item.dataset.id : null;
-  if (!id || !Number.isFinite(newMonth) || newMonth < 1 || newMonth > 12) {
+  if (!id || !Number.isFinite(newMonth) || newMonth < 0 || newMonth > 12) {
     renderScheduleReorder();
     return;
   }
@@ -9325,9 +9394,15 @@ function handleChipDrop(evt) {
 
   _ensureScheduleReorderSnapshot();
   item.month = newMonth;
-  item.dateStart = remapYearMonth(item.dateStart, item.year, newMonth);
-  item.dateEnd = remapYearMonth(item.dateEnd || item.dateStart, item.year, newMonth);
-  if (item.dateEnd < item.dateStart) item.dateEnd = item.dateStart;
+  if (newMonth === 0) {
+    // 미정으로 이동 — 날짜 비움
+    item.dateStart = '';
+    item.dateEnd = '';
+  } else {
+    item.dateStart = remapYearMonth(item.dateStart, item.year, newMonth);
+    item.dateEnd = remapYearMonth(item.dateEnd || item.dateStart, item.year, newMonth);
+    if (item.dateEnd < item.dateStart) item.dateEnd = item.dateStart;
+  }
   if (typeof updateScheduleStatuses === 'function') updateScheduleStatuses();
   window._scheduleReorderDirty = true;
   renderScheduleReorder();
@@ -9349,7 +9424,7 @@ function showScheduleStation(scheduleId) {
   html += `뒤로</button>`;
   html += `<div>`;
   html += `<h2 class="section-title" style="font-size:24px;">${item.displayName || item.station}</h2>`;
-  html += `<p class="section-subtitle">${item.year}년 ${item.month}월 &middot; <span class="badge-pill" style="${getScheduleStatusBadgeStyle(item.status)}">${calcScheduleStatus(item).label}</span></p>`;
+  html += `<p class="section-subtitle">${item.year}년 ${item.month === 0 ? '미정' : item.month + '월'} &middot; <span class="badge-pill" style="${getScheduleStatusBadgeStyle(item.status)}">${calcScheduleStatus(item).label}</span></p>`;
   html += `</div>`;
   html += `</div>`;
 
@@ -9624,10 +9699,11 @@ function saveNewSchedule() {
   const year = parseInt(document.getElementById('newScheduleYear').value);
   const dateStart = document.getElementById('newScheduleDateStart').value;
   const dateEnd = document.getElementById('newScheduleDateEnd').value;
-  const month = dateStart ? parseInt(dateStart.split('-')[1]) : new Date().getMonth() + 1;
+  let month = dateStart ? parseInt(dateStart.split('-')[1]) : new Date().getMonth() + 1;
   const auditorValue = document.getElementById('newScheduleAuditorPicker_value');
   const auditors = auditorValue ? auditorValue.value : '';
   const status = document.getElementById('newScheduleStatus').value;
+  if (status === 'tbd') month = 0; // 미정 — 월 미지정
   const noteInput = document.getElementById('newScheduleNote');
   note = noteInput ? noteInput.value : '';
   const cycleSel = document.getElementById('newScheduleCycle');
@@ -9639,7 +9715,7 @@ function saveNewSchedule() {
   // 같은 연도 같은 지점 중복 등록 방지
   const duplicate = scheduleData.find(s => s.year === year && s.station === station);
   if (duplicate) {
-    if (!confirm(`${station}은(는) ${year}년 ${duplicate.month}월에 이미 일정이 등록되어 있습니다.\n기존 일정을 덮어쓰시겠습니까?`)) return;
+    if (!confirm(`${station}은(는) ${year}년 ${duplicate.month === 0 ? '미정' : duplicate.month + '월'}에 이미 일정이 등록되어 있습니다.\n기존 일정을 덮어쓰시겠습니까?`)) return;
     // 기존 일정 삭제 후 새로 등록
     const dupIdx = scheduleData.findIndex(s => s.id === duplicate.id);
     if (dupIdx >= 0) scheduleData.splice(dupIdx, 1);
@@ -9663,7 +9739,7 @@ function saveNewSchedule() {
 function deleteScheduleItem(scheduleId) {
   const item = scheduleData.find(s => s.id === scheduleId);
   if (!item) return;
-  if (!confirm(`${item.displayName || item.station} (${item.month}월) 일정을 삭제하시겠습니까?`)) return;
+  if (!confirm(`${item.displayName || item.station} (${item.month === 0 ? '미정' : item.month + '월'}) 일정을 삭제하시겠습니까?`)) return;
 
   const idx = scheduleData.findIndex(s => s.id === scheduleId);
   if (idx >= 0) {
@@ -9737,6 +9813,19 @@ function toggleNewStationForm() {
   if (form) {
     form.classList.toggle('hidden');
   }
+}
+
+function toggleTbdSchedule() {
+  const statusSel = document.getElementById('newScheduleStatus');
+  const isTbd = !!statusSel && statusSel.value === 'tbd';
+  ['newScheduleDateStart', 'newScheduleDateEnd'].forEach(elId => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (isTbd) el.value = '';
+    el.disabled = isTbd;
+    el.style.opacity = isTbd ? '0.45' : '';
+    el.style.cursor = isTbd ? 'not-allowed' : '';
+  });
 }
 
 function renderAddScheduleForm() {
@@ -9865,8 +9954,9 @@ function renderAddScheduleForm() {
   // Status selector
   html += '<div class="mb-4">';
   html += '<label class="apple-label">상태</label>';
-  html += '<select id="newScheduleStatus" class="apple-input">';
+  html += '<select id="newScheduleStatus" class="apple-input" onchange="toggleTbdSchedule()">';
   html += '<option value="upcoming">예정</option>';
+  html += '<option value="tbd">미정 (일정 조정 중)</option>';
   html += '<option value="in_progress">진행 중</option>';
   html += '<option value="completed">완료</option>';
   html += '</select>';
@@ -15385,7 +15475,7 @@ Object.assign(window, {
   renderSchedule, showScheduleStation, saveScheduleItem, setSchedulePhase, scheduleGoBack,
   showAddScheduleForm, saveNewSchedule, deleteScheduleItem,
   scrollToMonthDetail, addExceptionAudit, toggleExceptionReason,
-  autoDetectCycle, toggleNewStationForm, renderAddScheduleForm,
+  autoDetectCycle, toggleNewStationForm, renderAddScheduleForm, toggleTbdSchedule,
   // Data management
   renderDataManagement, renderCustomStationList, deleteCustomStation, exportAllExcel, exportStationExcel,
   exportJSON, importJSON, resetAllData,
