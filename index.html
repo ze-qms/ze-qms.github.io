@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.21.0',
+  version: '19.21.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -11225,13 +11225,17 @@ function renderHome() {
     </div>
   `;
 
-  // Recent audits — 심사일 기준 최신순 정렬
+  // Recent audits — 심사일 기준 최신순 정렬 (v19.21.2: 지점 + 실/본부 + 외주협력업체 통합 — 이전엔 completedStations만 써서 실/본부·외주 누락 버그)
+  const completedOutsourcing = new Set(yearData.filter(d => d.region === '협력사(본사)').map(d => d.station).filter(Boolean));
+  const completedAll = new Set([...completedStations, ...completedDivisions, ...completedOutsourcing]);
   const stationDates = {};
   yearData.forEach(d => {
+    const name = d.station || d.division;
+    if (!name) return;
     const date = d.auditDateStart || d.auditDate || '';
-    if (!stationDates[d.station] || date > stationDates[d.station]) stationDates[d.station] = date;
+    if (!stationDates[name] || date > stationDates[name]) stationDates[name] = date;
   });
-  const recentStations = [...completedStations]
+  const recentStations = [...completedAll]
     .sort((a, b) => (stationDates[b] || '').localeCompare(stationDates[a] || ''))
     .slice(0, 3);
   let recentHtml = '';
@@ -11239,7 +11243,7 @@ function renderHome() {
     recentHtml = '<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:20px;">완료된 심사가 없습니다.</div>';
   } else {
     recentStations.forEach(station => {
-      const stationRecords = yearData.filter(d => d.station === station);
+      const stationRecords = yearData.filter(d => (d.station || d.division) === station);
       const dateDisplay = stationRecords[0]?.auditDateStart || stationRecords[0]?.auditDate || '-';
       const types = stationRecords.map(d => { const reg = CHECKLIST_REGISTRY[d.type]; return reg ? reg.name : getTypeLabel(d.type); }).join(', ');
       // 바이너리/등급 분리 표시
