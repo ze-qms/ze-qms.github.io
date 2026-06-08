@@ -1665,7 +1665,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.18.3',
+  version: '19.19.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -9028,9 +9028,11 @@ function renderSchedule() {
   for (let m = 1; m <= 12; m++) {
     const items = monthMap[m] || [];
     const isCurrentMonth = (m === currentMonth && scheduleYear === currentYear);
-    const rowBg = isCurrentMonth ? 'background:rgba(210,0,21,0.04);' : '';
+    const topBorder = (m === 1) ? '' : `border-top:1px solid ${isCurrentMonth ? 'rgba(210,0,21,0.35)' : '#D7DBDC'};`;
+    const rowBg = isCurrentMonth ? 'background:rgba(210,0,21,0.05);' : '';
+    const monthCellStyle = `text-align:center;font-weight:700;font-size:15px;vertical-align:middle;${topBorder}${isCurrentMonth?'color:#D20015;background:rgba(210,0,21,0.1);':'background:rgba(48,58,60,0.06);'}`;
     if (items.length === 0) {
-      html += `<tr style="${rowBg}"><td data-label="월" style="text-align:center;font-weight:600;${isCurrentMonth?'color:#D20015;':''}">${m}월</td><td data-label="대상" style="color:#C0CED1;">-</td><td data-label="심사원" style="color:#C0CED1;">-</td><td data-label="심사 기간" style="text-align:center;color:#C0CED1;">-</td><td data-label="상태" style="text-align:center;color:#C0CED1;">-</td></tr>`;
+      html += `<tr style="${rowBg}"><td data-label="월" style="${monthCellStyle}">${m}월</td><td data-label="대상" style="${topBorder}color:#C0CED1;">-</td><td data-label="심사원" style="${topBorder}color:#C0CED1;">-</td><td data-label="심사 기간" style="${topBorder}text-align:center;color:#C0CED1;">-</td><td data-label="상태" style="${topBorder}text-align:center;color:#C0CED1;">-</td></tr>`;
     } else {
       items.forEach((item, i) => {
         const statusResult = calcScheduleStatus(item);
@@ -9040,13 +9042,14 @@ function renderSchedule() {
         const dotColor = isDivision ? '#6366F1' : isOutsourcing ? '#F59E0B' : '#22C55E';
         const nameColor = isDivision ? 'color:#6366F1;' : isOutsourcing ? 'color:#F59E0B;' : '';
         const dotHtml = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;vertical-align:middle;"></span>`;
+        const tb = (i === 0) ? topBorder : '';
         html += `<tr style="cursor:pointer;${rowBg}" onclick="setSchedulePhase(2,'${item.id}')">`;
-        if (i === 0) html += `<td data-label="월" style="text-align:center;font-weight:600;${isCurrentMonth?'color:#D20015;':''}" rowspan="${items.length}">${m}월</td>`;
+        if (i === 0) html += `<td data-label="월" style="${monthCellStyle}" rowspan="${items.length}">${m}월</td>`;
         const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;" title="상세 보기">&#9654;</span>` : '';
-        html += `<td data-label="대상" style="font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
-        html += `<td data-label="심사원" style="font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
-        html += `<td data-label="심사 기간" style="text-align:center;font-size:12px;">${dateStr}</td>`;
-        html += `<td data-label="상태" style="text-align:center;"><span class="badge-pill" style="${getScheduleStatusBadgeStyle(statusResult.status)}">${statusResult.label}</span></td>`;
+        html += `<td data-label="대상" style="${tb}font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
+        html += `<td data-label="심사원" style="${tb}font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
+        html += `<td data-label="심사 기간" style="${tb}text-align:center;font-size:12px;">${dateStr}</td>`;
+        html += `<td data-label="상태" style="${tb}text-align:center;"><span class="badge-pill" style="${getScheduleStatusBadgeStyle(statusResult.status)}">${statusResult.label}</span></td>`;
         html += '</tr>';
       });
     }
