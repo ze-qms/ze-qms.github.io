@@ -1136,40 +1136,54 @@ select.apple-input {
     <div class="mb-6">
       <h2 class="section-title">통계</h2>
       <p class="section-subtitle mt-1">성숙도 점검 통합 현황</p>
-      <div id="statsYearSegment" style="display:inline-flex;background:#f9f9fb;border-radius:980px;padding:3px;margin-top:10px;"></div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;">
+        <select id="statsYear" class="apple-input" style="width:auto;min-width:92px;padding-top:7px;padding-bottom:7px;" onchange="renderStatsDashboard()"></select>
+        <select id="statsPeriodSel" class="apple-input" style="width:auto;min-width:110px;padding-top:7px;padding-bottom:7px;" onchange="onStatsPeriodSelChange()">
+          <option value="year" selected>연간 전체</option>
+          <optgroup label="분기">
+            <option value="q1">1분기</option>
+            <option value="q2">2분기</option>
+            <option value="q3">3분기</option>
+            <option value="q4">4분기</option>
+          </optgroup>
+          <optgroup label="월별">
+            <option value="m1">1월</option>
+            <option value="m2">2월</option>
+            <option value="m3">3월</option>
+            <option value="m4">4월</option>
+            <option value="m5">5월</option>
+            <option value="m6">6월</option>
+            <option value="m7">7월</option>
+            <option value="m8">8월</option>
+            <option value="m9">9월</option>
+            <option value="m10">10월</option>
+            <option value="m11">11월</option>
+            <option value="m12">12월</option>
+          </optgroup>
+        </select>
+      </div>
       <div id="statsSubTabBar" class="flex gap-2 mt-3 overflow-x-auto flex-nowrap" style="-webkit-overflow-scrolling:touch;">
-        <button class="sub-tab sub-tab-active" onclick="switchStatsSubTab('branch')" id="statsSubBranch">지점 성숙도</button>
+        <button class="sub-tab sub-tab-active" onclick="switchStatsSubTab('overview')" id="statsSubOverview">종합</button>
+        <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('branch')" id="statsSubBranch">지점 성숙도</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('division')" id="statsSubDivision">실/본부 심사</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('outsourcing')" id="statsSubOutsourcing">외주협력업체</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('auditor')" id="statsSubAuditor">심사원 활동</button>
       </div>
-      <select id="statsYear" class="hidden"><option></option></select>
       <script>
       (function() {
         const y = new Date().getFullYear();
-        const container = document.getElementById('statsYearSegment');
         const sel = document.getElementById('statsYear');
         for (let i = y - 2; i <= y + 1; i++) {
           const opt = document.createElement('option');
-          opt.value = i; opt.textContent = i;
+          opt.value = i; opt.textContent = i + '년';
           if (i === y) opt.selected = true;
           sel.appendChild(opt);
-          const btn = document.createElement('button');
-          btn.textContent = i + '년';
-          btn.dataset.year = i;
-          btn.style.cssText = 'border:none;border-radius:980px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;letter-spacing:-0.224px;' + (i === y ? 'background:#D20015;color:#fff;' : 'background:transparent;color:#565A5B;');
-          btn.onclick = function() {
-            sel.value = i;
-            container.querySelectorAll('button').forEach(b => { b.style.background = 'transparent'; b.style.color = '#565A5B'; });
-            this.style.background = '#D20015'; this.style.color = '#fff';
-            renderStatsDashboard();
-          };
-          container.appendChild(btn);
         }
       })();
       </script>
     </div>
-    <div id="branchStatsContent">
+    <div id="overviewStatsContent"></div>
+    <div id="branchStatsContent" class="hidden">
     <div id="summaryCards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"></div>
     <div class="apple-card p-6 mb-6">
       <h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin-bottom:16px;">3개년 비교</h3>
@@ -1665,7 +1679,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.21.2',
+  version: '19.22.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -2953,6 +2967,7 @@ function getAuditorActivityCount(auditorName, year) {
   const stations = new Set();
   allData.forEach(d => {
     if (d.year != year) return;
+    if (typeof inStatsPeriod === 'function' && !inStatsPeriod(d)) return; // 통계 기간(년/분기/월) 적용
     const a = d.auditor || '';
     if (a.split(',').map(s=>s.trim()).includes(auditorName)) {
       stations.add(d.station);
@@ -6676,14 +6691,183 @@ function navigateToInput(year, station, type) {
 // ============================================================================
 // TAB 3: STATISTICS DASHBOARD
 // ============================================================================
+// ── 통계 기간 필터 (년/분기/월) ─────────────────────────────────────
+let statsPeriod = { mode: 'year', quarter: Math.ceil((new Date().getMonth() + 1) / 3), month: new Date().getMonth() + 1 };
+
+function _statsRecordMonth(d) {
+  const s = d.auditDateStart || d.auditDate || '';
+  const m = (s && s.length >= 7) ? parseInt(s.slice(5, 7)) : NaN;
+  return isNaN(m) ? null : m; // 1~12 or null(날짜 미상)
+}
+function inStatsPeriod(d) {
+  if (statsPeriod.mode === 'year') return true; // 연도는 호출부에서 이미 필터
+  const m = _statsRecordMonth(d);
+  if (m === null) return false; // 날짜 미상은 분기/월 집계서 제외
+  if (statsPeriod.mode === 'quarter') return Math.ceil(m / 3) === statsPeriod.quarter;
+  return m === statsPeriod.month;
+}
+function applyStatsPeriod(arr) { return arr.filter(inStatsPeriod); }
+function statsPeriodLabel() {
+  const y = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
+  if (statsPeriod.mode === 'quarter') return y + '년 ' + statsPeriod.quarter + '분기';
+  if (statsPeriod.mode === 'month') return y + '년 ' + statsPeriod.month + '월';
+  return y + '년';
+}
+function onStatsPeriodSelChange() {
+  const sel = document.getElementById('statsPeriodSel');
+  if (!sel) return;
+  const v = sel.value;
+  if (v === 'year') {
+    statsPeriod.mode = 'year';
+  } else if (v.charAt(0) === 'q') {
+    statsPeriod.mode = 'quarter';
+    statsPeriod.quarter = parseInt(v.slice(1));
+  } else if (v.charAt(0) === 'm') {
+    statsPeriod.mode = 'month';
+    statsPeriod.month = parseInt(v.slice(1));
+  }
+  renderStatsDashboard();
+}
+
+// ── 종합 서브탭 ────────────────────────────────────────────────────
+// 단일 심사대상 1행 (지점/실본부/외주 공용) — renderHome 점수 배지 로직 재사용
+function _ovRow(name, records, year, showType) {
+  records = records || [];
+  const dateDisplay = records.reduce((mx, d) => { const dt = d.auditDateStart || d.auditDate || ''; return dt > mx ? dt : mx; }, '') || '-';
+  const typesStr = [...new Set(records.map(d => (CHECKLIST_REGISTRY[d.type] && CHECKLIST_REGISTRY[d.type].name) || getTypeLabel(d.type)))].join(', ');
+  const hasBinary = records.some(d => getScoringMethod(d.type) === 'binary');
+  const hasGrade = records.some(d => getScoringMethod(d.type) !== 'binary');
+  let scoreBadge;
+  if (hasBinary && !hasGrade) {
+    const totalRate = records.reduce((s, d) => s + calculateBinaryScores(d.scores, getChecklist(d.type)).complianceRate, 0) / records.length;
+    const style = totalRate >= 90 ? 'background:rgba(34,197,94,0.15);color:#22C55E' : totalRate >= 70 ? 'background:rgba(245,158,11,0.15);color:#F59E0B' : 'background:rgba(210,0,21,0.15);color:#D20015';
+    scoreBadge = `<span class="badge-pill" style="${style}">${totalRate.toFixed(0)}%</span>`;
+  } else {
+    const gr = records.filter(d => getScoringMethod(d.type) !== 'binary');
+    if (gr.length) {
+      const avg = gr.reduce((s, d) => s + calculateScores(d.scores, getChecklist(d.type)).overallAverage, 0) / gr.length;
+      scoreBadge = `<span class="badge-pill" style="${avgBadgeStyle(avg)}">${avg.toFixed(2)}</span>`;
+    } else {
+      scoreBadge = `<span class="badge-pill" style="background:rgba(158,162,161,0.15);color:#9EA2A1;">-</span>`;
+    }
+  }
+  let typeBadge = '';
+  if (showType) {
+    const r0 = records[0] || {};
+    const cat = r0.auditCategory === 'division' ? 'division' : ((r0.region === '협력사(본사)' || r0.auditCategory === 'outsourcing') ? 'outsourcing' : 'branch');
+    const tb = cat === 'division' ? { t: '실·본부', c: '#7C3AED', bg: 'rgba(124,58,237,0.12)' }
+      : cat === 'outsourcing' ? { t: '외주', c: '#C2410C', bg: 'rgba(245,158,11,0.14)' }
+      : { t: '지점', c: '#1D6FB8', bg: 'rgba(59,130,246,0.12)' };
+    typeBadge = `<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:980px;background:${tb.bg};color:${tb.c};margin-right:8px;">${tb.t}</span>`;
+  }
+  const safeName = String(name || '').replace(/'/g, "\\'");
+  return `<div class="flex justify-between items-center" style="padding:10px 0;border-bottom:1px solid rgba(192,206,209,0.2);cursor:pointer;" onclick="openStationDetail(${year},'${safeName}')">`
+    + `<div style="min-width:0;"><div>${typeBadge}<span style="font-weight:600;color:#D20015;">${name}</span></div>`
+    + `<div style="font-size:12px;color:#9EA2A1;">${typesStr} · ${dateDisplay}</div></div>`
+    + `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${scoreBadge}`
+    + `<svg style="width:12px;height:12px;color:#C0CED1;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></div></div>`;
+}
+
+function _ovSection(title, secId, names, byName, year) {
+  if (!names.length) {
+    return `<div class="apple-card p-6 mb-4"><div style="display:flex;justify-content:space-between;align-items:center;"><h3 style="font-size:16px;font-weight:600;color:#303A3C;margin:0;">${title}</h3><span style="font-size:13px;color:#9EA2A1;">0곳</span></div></div>`;
+  }
+  const rows = names.map(n => _ovRow(n, byName[n], year, false)).join('');
+  return `<div class="apple-card p-6 mb-4">`
+    + `<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('${secId}')">`
+    + `<h3 style="font-size:16px;font-weight:600;color:#303A3C;margin:0;">${title} <span style="color:#9EA2A1;font-weight:500;">${names.length}곳</span></h3>`
+    + `<span id="${secId}Arrow" style="color:#9EA2A1;font-size:14px;">▸</span></div>`
+    + `<div id="${secId}" class="hidden" style="margin-top:10px;">${rows}</div></div>`;
+}
+
+function renderOverviewStats() {
+  const box = document.getElementById('overviewStatsContent');
+  if (!box) return;
+  try {
+    const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
+    const scoped = applyStatsPeriod(allData.filter(d => d.year == year));
+    const periodLbl = statsPeriodLabel();
+
+    // 완료 집합 3종 (renderHome 패턴)
+    const completedStations = new Set(scoped.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)').map(d => d.station).filter(Boolean));
+    const completedDivisions = new Set(scoped.filter(d => d.auditCategory === 'division').map(d => d.division || d.station).filter(Boolean));
+    const completedOutsourcing = new Set(scoped.filter(d => d.region === '협력사(본사)').map(d => d.station).filter(Boolean));
+    const completedAll = new Set([...completedStations, ...completedDivisions, ...completedOutsourcing]);
+
+    // 평균 지표
+    let brSum = 0, brN = 0, dvSum = 0, dvN = 0, osSum = 0, osN = 0;
+    scoped.forEach(d => {
+      if (d.region === '협력사(본사)') {
+        const r = calculateBinaryScores(d.scores, getChecklist(d.type));
+        if (r.totalApplicable) { osSum += r.complianceRate; osN++; }
+      } else if (d.auditCategory === 'division') {
+        if (getScoringMethod(d.type) !== 'binary') return;
+        const r = calculateBinaryScores(d.scores, getChecklist(d.type));
+        if (r.totalApplicable) { dvSum += r.complianceRate; dvN++; }
+      } else if (d.auditCategory === 'branch') {
+        if (getScoringMethod(d.type) === 'binary') return; // 안전감사 제외
+        const r = calculateScores(d.scores, getChecklist(d.type));
+        if (r.totalItems) { brSum += r.overallAverage; brN++; }
+      }
+    });
+    const brAvg = brN ? (brSum / brN) : null;
+    const dvAvg = dvN ? (dvSum / dvN) : null;
+    const osAvg = osN ? (osSum / osN) : null;
+
+    // 대상명 → 레코드 매핑 (날짜 정렬용)
+    const byName = {};
+    scoped.forEach(d => {
+      const n = (d.auditCategory === 'division') ? (d.division || d.station) : d.station;
+      if (!n) return;
+      (byName[n] = byName[n] || []).push(d);
+    });
+    const latestDate = n => (byName[n] || []).reduce((mx, d) => { const dt = d.auditDateStart || d.auditDate || ''; return dt > mx ? dt : mx; }, '');
+    const allNames = [...completedAll].sort((a, b) => latestDate(b).localeCompare(latestDate(a)));
+
+    const card = (label, big, unit, sub) =>
+      `<div class="apple-card" style="padding:18px;">`
+      + `<div style="font-size:13px;color:#9EA2A1;margin-bottom:6px;">${label}</div>`
+      + `<div style="font-size:26px;font-weight:700;color:#303A3C;line-height:1.1;">${big}<span style="font-size:14px;font-weight:500;color:#9EA2A1;"> ${unit}</span></div>`
+      + `<div style="font-size:12px;color:#565A5B;margin-top:4px;">${sub}</div></div>`;
+
+    let html = '';
+    html += `<div class="flex items-center gap-3 mb-4"><span style="font-size:13px;color:#9EA2A1;">${periodLbl} · 전 심사대상 종합 · 완료 ${completedAll.size}곳</span></div>`;
+    html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">`
+      + card('완료 심사대상', completedAll.size, '곳', '지점·실본부·외주 합산')
+      + card('지점', completedStations.size, '곳', '평균 ' + (brAvg != null ? brAvg.toFixed(2) + '점' : '-'))
+      + card('실/본부', completedDivisions.size, '곳', '적합률 ' + (dvAvg != null ? dvAvg.toFixed(1) + '%' : '-'))
+      + card('외주협력업체', completedOutsourcing.size, '곳', '적합률 ' + (osAvg != null ? osAvg.toFixed(1) + '%' : '-'))
+      + `</div>`;
+
+    // 유형별 섹션 (기본 접힘)
+    html += _ovSection('지점', 'ov_branch', [...completedStations], byName, year);
+    html += _ovSection('실/본부', 'ov_division', [...completedDivisions], byName, year);
+    html += _ovSection('외주협력업체', 'ov_outsourcing', [...completedOutsourcing], byName, year);
+
+    // 통합 완료 리스트 (심사일 내림차순)
+    let listRows = allNames.map(n => _ovRow(n, byName[n], year, true)).join('');
+    if (!allNames.length) listRows = `<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:24px;">${periodLbl}에 완료된 심사가 없습니다.</div>`;
+    html += `<div class="apple-card p-6 mb-4">`
+      + `<h3 style="font-size:16px;font-weight:600;color:#303A3C;margin:0 0 4px;">전체 완료 심사</h3>`
+      + `<p style="font-size:13px;color:#9EA2A1;margin:0 0 12px;">심사일 최신순 · 클릭하면 상세로 이동합니다</p>`
+      + `<div>${listRows}</div></div>`;
+
+    box.innerHTML = html;
+  } catch (e) {
+    console.error('renderOverviewStats failed:', e);
+    box.innerHTML = `<div class="apple-card p-6"><div style="color:#D20015;font-size:14px;">종합 화면을 불러오는 중 오류가 발생했습니다.</div></div>`;
+  }
+}
+
 function renderStatsDashboard() {
-  if (typeof statsSubTab === 'undefined') window.statsSubTab = 'branch';
+  if (typeof statsSubTab === 'undefined') window.statsSubTab = 'overview';
+  if (statsSubTab === 'overview') { renderOverviewStats(); return; }
   if (statsSubTab === 'division') { renderDivisionStats(); return; }
   if (statsSubTab === 'outsourcing') { renderOutsourcingStats(); return; }
   if (statsSubTab === 'auditor') { renderAuditorStats(); return; }
   // Continue with existing branch stats below...
   const year = parseInt(document.getElementById('statsYear').value);
-  const yearData = allData.filter(d => d.year == year && d.auditCategory === 'branch');
+  const yearData = applyStatsPeriod(allData.filter(d => d.year == year && d.auditCategory === 'branch'));
   // 지점 전용 REGIONS (협력사(본사) 제외)
   const BRANCH_REGIONS = Object.entries(REGIONS).filter(([k]) => k !== '협력사(본사)');
 
@@ -7084,7 +7268,7 @@ function toggleSection(sectionId) {
 
 function switchStatsSubTab(tab) {
   window.statsSubTab = tab;
-  const tabs = ['branch', 'division', 'outsourcing', 'auditor'];
+  const tabs = ['overview', 'branch', 'division', 'outsourcing', 'auditor'];
   tabs.forEach(t => {
     const btn = document.getElementById('statsSub' + t.charAt(0).toUpperCase() + t.slice(1));
     if (btn) btn.className = t === tab ? 'sub-tab sub-tab-active' : 'sub-tab sub-tab-inactive';
@@ -7097,12 +7281,12 @@ function switchStatsSubTab(tab) {
 
 function renderDivisionStats() {
   const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
-  const divData = allData.filter(d => d.auditCategory === 'division' && d.year == year);
+  const divData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'division' && d.year == year));
 
   let html = '';
 
   html += `<div class="flex items-center gap-3 mb-4">`;
-  html += `<span style="font-size:13px;color:#9EA2A1;">${year}년 · 실/본부 심사 ${divData.length}건</span>`;
+  html += `<span style="font-size:13px;color:#9EA2A1;">${statsPeriodLabel()} · 실/본부 심사 ${divData.length}건</span>`;
   html += `</div>`;
 
   if (divData.length === 0) {
@@ -7253,11 +7437,11 @@ function renderDivisionStats() {
 // ============================================================================
 function renderOutsourcingStats() {
   const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
-  const outData = allData.filter(d => d.auditCategory === 'outsourcing' && d.year == year);
+  const outData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'outsourcing' && d.year == year));
 
   let html = '';
   html += `<div class="flex items-center gap-3 mb-4">`;
-  html += `<span style="font-size:13px;color:#9EA2A1;">${year}년 · 외주협력업체 점검 ${outData.length}건</span>`;
+  html += `<span style="font-size:13px;color:#9EA2A1;">${statsPeriodLabel()} · 외주협력업체 점검 ${outData.length}건</span>`;
   html += `</div>`;
 
   if (outData.length === 0) {
@@ -7406,7 +7590,7 @@ function renderAuditorStats() {
 
   let html = '';
   html += `<div class="flex items-center gap-3 mb-4">`;
-  html += `<span style="font-size:13px;color:#9EA2A1;">${year}년 · 심사원 활동 현황</span>`;
+  html += `<span style="font-size:13px;color:#9EA2A1;">${statsPeriodLabel()} · 심사원 활동 현황</span>`;
   html += `</div>`;
 
   // Summary cards
@@ -15484,6 +15668,7 @@ Object.assign(window, {
   navigateToInput, renderScoreView,
   // Stats tab
   switchStatsSubTab, renderStatsDashboard, toggleWeakDetail,
+  renderOverviewStats, onStatsPeriodSelChange,
   // Analysis tab
   switchAnalysisSubTab, renderAnalysis, renderMaturityResultList, toggleAnalysisDetail, closeAnalysisModal, switchInsightSegment, updateInsightSegment, switchCheckSegment, updateCheckSegment,
   // Schedule tab
