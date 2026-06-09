@@ -1555,7 +1555,11 @@ select.apple-input {
         <h2 id="sdTitle" class="section-title" style="margin:0;"></h2>
         <p id="sdSubtitle" class="section-subtitle" style="margin:2px 0 0;"></p>
       </div>
-      <div id="sdDownloadMenu" class="sd-download-menu" style="margin-left:auto;position:relative;">
+      <button type="button" onclick="goToChecklistView()" class="pill-btn pill-btn-outline" style="margin-left:auto;padding:6px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;" title="이 대상의 점검표(점수 조회)로 이동">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        점검표 보기
+      </button>
+      <div id="sdDownloadMenu" class="sd-download-menu" style="position:relative;">
         <button type="button" onclick="toggleSdDownloadMenu(event)" class="pill-btn pill-btn-outline" style="padding:6px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           다운로드
@@ -1691,7 +1695,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.24.6',
+  version: '19.24.7',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -12438,6 +12442,22 @@ function closeStationDetail() {
   switchTab(stationDetailPreviousTab);
 }
 
+// v19.24.7: 상세 페이지 → 점검표(점수 조회 Tab 2)로 이동 + 해당 대상 결과 펼침
+function goToChecklistView() {
+  const year = stationDetailYear, station = stationDetailStation;
+  document.getElementById('tabStationDetail').classList.add('hidden');
+  switchTab(2);
+  setTimeout(function() {
+    const y = document.getElementById('viewYear'); if (y) y.value = String(year);
+    const vt = document.getElementById('viewType'); if (vt) vt.value = '전체';
+    const vr = document.getElementById('viewRegion'); if (vr) vr.value = '전체';
+    const vs = document.getElementById('viewStatus'); if (vs) vs.value = '전체';
+    const t = document.getElementById('viewTarget'); if (t) { t.value = station; if (t._comboRefresh) t._comboRefresh(); }
+    if (typeof viewSearch === 'function') viewSearch();
+    setTimeout(function() { const fr = document.getElementById('viewGroup_0'); if (fr) fr.classList.remove('hidden'); }, 80);
+  }, 100);
+}
+
 // ========================================================================
 // 상세 페이지 다운로드 (PDF / HTML / 그룹웨어 클립보드 복사) — v19.8.0
 // ========================================================================
@@ -16224,7 +16244,7 @@ Object.assign(window, {
   carAddItemRow, carRemoveItemRow, saveCarItemsFromInputs, renderCarClassSummary, renderCarItemsList,
   saveCarCategoriesFromPanel, carCatAddRow, carCatRemoveRow,
   // Detail page download (v19.8.0)
-  toggleSdDownloadMenu, downloadDetailPDF, downloadDetailHTML, copyDetailHTMLToClipboard,
+  toggleSdDownloadMenu, downloadDetailPDF, downloadDetailHTML, copyDetailHTMLToClipboard, goToChecklistView,
   // 전자결재 결과보고 입력 패널 (v19.17.0) — inline onclick/oninput 핸들러
   saveReportDraft, saveReportDefaultsFromPanel, rdAddCarIssued, rdAddCarPrevious,
   _gtAddRow, _gtDelRow, _gtAddCol, _gtDelCol, _gtSetHeader, _gtSetCell,
