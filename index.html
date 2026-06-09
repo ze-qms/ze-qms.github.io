@@ -1691,7 +1691,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.24.4',
+  version: '19.24.5',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -15098,7 +15098,9 @@ function renderCarEditorRows() {
     const catOpts = cats.map(c => `<option value="${_esc(c)}"${it.category === c ? ' selected' : ''}>${_esc(c)}</option>`).join('');
     const clsOpts = CAR_CLASSES.map(c => `<option value="${c.key}"${it.cls === c.key ? ' selected' : ''}>${c.label}</option>`).join('');
     const rk = String(it.risk || '').toUpperCase();
-    const curSev = rk.charAt(0), curLike = rk.slice(1);
+    // riskSev/riskLike(편집 중 sync 값) 우선, 없으면 it.risk 파싱 — 항목 추가 시 위험도 초기화 버그 수정
+    const curSev = (it.riskSev != null && it.riskSev !== '') ? String(it.riskSev) : rk.charAt(0);
+    const curLike = (it.riskLike != null && it.riskLike !== '') ? String(it.riskLike) : rk.slice(1);
     const sevOpts = `<option value="">심각도</option>` + CAR_RISK_SEV.map(n => `<option value="${n}"${curSev === String(n) ? ' selected' : ''}>${n}</option>`).join('');
     const likeOpts = `<option value="">가능성</option>` + CAR_RISK_LIKE.map(l => `<option value="${l}"${curLike === l ? ' selected' : ''}>${l}</option>`).join('');
     return `<div style="padding:14px;margin-bottom:10px;background:#fff;border:1px solid #E5EAEC;border-radius:12px;">`
@@ -15136,19 +15138,26 @@ function carRemoveItemRow(idx) {
 }
 function saveCarItemsFromInputs() {
   _carSyncEditorFromDom();
-  const clean = carEditItems
-    .filter(it => it && ((it.title && it.title.trim()) || it.category))
-    .map(it => {
-      const sev = it.riskSev || '', like = it.riskLike || '';
-      const risk = (sev && like) ? (sev + like) : '';
-      return {
-        id: it.id || ('ci_' + Date.now() + '_' + Math.floor(Math.random() * 1e6)),
-        category: it.category || '',
-        cls: it.cls || 'class1',
-        risk: risk,
-        title: (it.title || '').trim()
-      };
-    });
+  const items = carEditItems.filter(Boolean);
+  // 제목 미입력 항목 차단 — 첫 미입력 행으로 스크롤·강조
+  const emptyIdx = items.findIndex(it => !(it.title && it.title.trim()));
+  if (emptyIdx >= 0) {
+    showToast('제목이 입력되지 않은 CAR 항목이 있습니다. 제목을 입력하거나 항목을 삭제해주세요.', 'warning');
+    const el = document.querySelector(`#sdCarItemRows [data-idx="${emptyIdx}"][data-field="title"]`);
+    if (el) { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.boxShadow = '0 0 0 2px #D20015'; setTimeout(() => { el.style.boxShadow = ''; }, 2000); }
+    return;
+  }
+  const clean = items.map(it => {
+    const sev = it.riskSev || '', like = it.riskLike || '';
+    const risk = (sev && like) ? (sev + like) : '';
+    return {
+      id: it.id || ('ci_' + Date.now() + '_' + Math.floor(Math.random() * 1e6)),
+      category: it.category || '',
+      cls: it.cls || 'class1',
+      risk: risk,
+      title: (it.title || '').trim()
+    };
+  });
   saveCarItems(stationDetailYear, stationDetailStation, clean);
   toggleCarEdit();
   renderSDCarChart(carChartCounts(stationDetailYear, stationDetailStation));
