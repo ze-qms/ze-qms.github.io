@@ -1691,7 +1691,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.24.5',
+  version: '19.24.6',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8577,7 +8577,7 @@ function renderCarAnalysis(year) {
   html += `</tbody></table></div>`;
   if (class1Items.length) {
     html += `<div style="font-size:13px;font-weight:600;color:#D20015;margin-bottom:8px;">Class 1 주요 발견사항 (${class1Items.length}건)</div>`;
-    html += class1Items.map(it => {
+    html += _carSortItems(class1Items).map(it => {
       const rb = riskBadgeHtml(it.risk);
       return `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(192,206,209,0.25);"><span style="flex-shrink:0;font-size:11px;font-weight:600;padding:2px 8px;border-radius:980px;background:rgba(210,0,21,0.08);color:#D20015;cursor:pointer;" onclick="openStationDetail(${year},'${String(it.station).replace(/'/g, "\\'")}')">${_esc(it.station)}</span>${rb ? `<span style="flex-shrink:0;">${rb}</span>` : ''}<span style="font-size:13px;color:#303A3C;flex:1;min-width:0;">${_esc(it.title || '(제목 없음)')}</span><span style="font-size:11px;color:#9EA2A1;flex-shrink:0;">${_esc(it.category || '')}</span></div>`;
     }).join('');
@@ -12388,6 +12388,25 @@ function riskBadgeHtml(code) {
 }
 const CAR_RISK_SEV = [5, 4, 3, 2, 1];
 const CAR_RISK_LIKE = ['A', 'B', 'C', 'D', 'E'];
+// v19.24.6: 위험도 순위(색상 red>orange>yellow>green, 같은 색은 심각도 숫자) — CAR 정렬용
+function _carRiskRank(code) {
+  const raw = String(code || '').trim().toUpperCase().replace(/\s+/g, '');
+  const lvl = (typeof RISK_MATRIX !== 'undefined') ? RISK_MATRIX[raw] : null;
+  const colorRank = { red: 4, orange: 3, yellow: 2, green: 1 };
+  const cr = lvl ? colorRank[lvl] : 0;
+  const sev = parseInt(raw.charAt(0)) || 0;
+  return cr * 10 + sev;
+}
+// CAR 항목 정렬: 심각도 class(Class1→2→Concern) 우선, 같은 등급은 위험도 높은 순
+function _carSortItems(items) {
+  const classRank = { class1: 0, class2: 1, concern: 2 };
+  return items.slice().sort((a, b) => {
+    const ca = (classRank[a.cls] != null) ? classRank[a.cls] : 3;
+    const cb = (classRank[b.cls] != null) ? classRank[b.cls] : 3;
+    if (ca !== cb) return ca - cb;
+    return _carRiskRank(b.risk) - _carRiskRank(a.risk);
+  });
+}
 
 // --- Navigation ---
 function openStationDetail(year, station, _fromPopstate) {
@@ -15930,7 +15949,8 @@ function renderCarItemsList(year, station) {
   if (!box) return;
   const items = loadCarItems(year, station);
   if (!items.length) { box.innerHTML = ''; return; }
-  const rows = items.map(it => {
+  // v19.24.6: 심각도 우선 정렬(Class1→2→Concern, 같은 등급은 위험도 높은 순)
+  const rows = _carSortItems(items).map(it => {
     const cm = carClassMeta(it.cls);
     const rb = riskBadgeHtml(it.risk);
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid rgba(192,206,209,0.25);">`
