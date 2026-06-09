@@ -1388,6 +1388,17 @@ select.apple-input {
       </div>
     </div>
 
+    <div class="apple-card p-6 mb-5" id="mgmt_carcat_card" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_carcat')">
+        <h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0;">CAR 영역 관리</h3>
+        <span id="mgmt_carcatArrow" style="color:#9EA2A1;font-size:14px;">&#9656;</span>
+      </div>
+      <div id="mgmt_carcat" class="hidden" style="margin-top:16px;">
+        <p style="font-size:12px;color:#9EA2A1;margin-bottom:12px;">개선조치요구서(CAR) 입력 시 선택하는 영역 목록입니다. 추가·이름변경·삭제할 수 있으며, 목록에서 빼도 기존 데이터의 영역은 통계·차트에 그대로 유지됩니다.</p>
+        <div id="carCatPanel"></div>
+      </div>
+    </div>
+
     <div class="apple-card p-6 mb-5">
       <!-- v19.14.5: 이름 명확화 ('백업' → 'JSON 가져오기/내보내기') — 아래 'Firebase 자동 백업'과 혼동 방지 -->
       <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection('mgmt_jsonio')">
@@ -1595,10 +1606,11 @@ select.apple-input {
             </table>
           </div>
           <div class="flex gap-2 mt-4">
-            <button onclick="saveCarInputs()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;">저장</button>
+            <button onclick="saveCarItemsFromInputs()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;">저장</button>
             <button onclick="toggleCarEdit()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 20px;">취소</button>
           </div>
         </div>
+        <div id="sdCarExtra" style="margin-top:12px;"><div id="sdCarClassSummary"></div><div id="sdCarItemsList" style="margin-top:10px;"></div></div>
       </div>
       <!-- 좌하: 6개 항목별 평가 결과 -->
       <div class="apple-card p-6">
@@ -1679,7 +1691,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.22.2',
+  version: '19.23.4',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3027,6 +3039,9 @@ function scheduleGoBack() {
 
 const CUSTOM_STATIONS_KEY = 'eastar_' + APP_ENV + '_custom_stations';
 const CAR_STORAGE_KEY = 'eastar_' + APP_ENV + '_car_data';
+// v19.23.0: CAR 발견사항 개별 항목(class/영역/상태/제목) + 영역 마스터 저장소
+const CARITEMS_STORAGE_KEY = 'eastar_' + APP_ENV + '_caritems';
+const CARCATS_STORAGE_KEY = 'eastar_' + APP_ENV + '_car_categories';
 // v19.11.0: 심사 메모(Audit Memo) 저장소 — { [year_station]: { [memoId]: memo } }
 const MEMO_STORAGE_KEY = 'eastar_' + APP_ENV + '_memos';
 
@@ -3518,7 +3533,7 @@ async function createBackup(trigger) {
   // ID: 2026-05-06_18-00-00Z (path-safe — Firebase가 . / # $ [ ] 못 씀)
   const id = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19) + 'Z';
 
-  const [aSnap, auSnap, sSnap, csSnap, mSnap, cSnap, rmSnap] = await Promise.all([
+  const [aSnap, auSnap, sSnap, csSnap, mSnap, cSnap, rmSnap, ciSnap, ccSnap] = await Promise.all([
     dbRef('assessments').once('value'),
     dbRef('auditors').once('value'),
     dbRef('schedule').once('value'),
@@ -3526,6 +3541,8 @@ async function createBackup(trigger) {
     dbRef('memos').once('value'),
     dbRef('car').once('value'),
     dbRef('reportMeta').once('value'),
+    dbRef('carItems').once('value'),
+    dbRef('carCategories').once('value'),
   ]);
 
   const cnt = (v) => v && typeof v === 'object' ? Object.keys(v).length : 0;
@@ -3547,6 +3564,7 @@ async function createBackup(trigger) {
       memos: memoCnt,
       car: cnt(cSnap.val()),
       reportMeta: cnt(rmSnap.val()),
+      carItems: cnt(ciSnap.val()),
     },
     data: {
       assessments: aSnap.val() || {},
@@ -3556,6 +3574,8 @@ async function createBackup(trigger) {
       memos: mSnap.val() || {},
       car: cSnap.val() || {},
       reportMeta: rmSnap.val() || {},
+      carItems: ciSnap.val() || {},
+      carCategories: ccSnap.val() || null,
     }
   };
 
@@ -3613,6 +3633,8 @@ async function restoreFromBackup(backupId) {
     dbRef('memos').set(data.memos || {}),
     dbRef('car').set(data.car || {}),
     dbRef('reportMeta').set(data.reportMeta || {}),
+    dbRef('carItems').set(data.carItems || {}),
+    dbRef('carCategories').set(data.carCategories || null),
   ]);
   showToast('복원 완료. 페이지를 새로고침합니다...', 'success');
   setTimeout(() => location.reload(), 2000);
@@ -3926,6 +3948,9 @@ async function onLoginSuccess() {
 
   // v19.1: CAR 데이터 Firebase 동기화
   loadCarDataFromFirebase();
+  // v19.23.0: CAR 항목·영역 마스터 Firebase 동기화
+  loadCarItemsFromFirebase();
+  loadCarCategoriesFromFirebase();
 
   // v19.14.0: 자동 백업 — admin이고 24h 경과 시
   try { maybeAutoBackup(); } catch(e) { console.warn('maybeAutoBackup failed:', e); }
@@ -6839,6 +6864,47 @@ function renderOverviewStats() {
       + card('외주협력업체', completedOutsourcing.size, '곳', '적합률 ' + (osAvg != null ? osAvg.toFixed(1) + '%' : '-'))
       + `</div>`;
 
+    // v19.23.2: 개선조치요구서 — 펼침형 카드 (헤더=분류 집계, 본문=발행 CAR 리스트)
+    try {
+      const carItems = collectCarItems(year);
+      if (carItems.length) {
+        const cc = {}; CAR_CLASSES.forEach(c => cc[c.key] = 0);
+        carItems.forEach(it => cc[it.cls] = (cc[it.cls] || 0) + 1);
+        // 대상명 → 심사월 (가장 이른 심사 시작월)
+        const monthOf = {};
+        allData.filter(d => d.year == year).forEach(d => {
+          const name = (d.auditCategory === 'division') ? (d.division || d.station) : d.station;
+          const dt = d.auditDateStart || d.auditDate || '';
+          const m = dt.length >= 7 ? parseInt(dt.slice(5, 7)) : null;
+          if (name && m) { if (!monthOf[name] || m < monthOf[name]) monthOf[name] = m; }
+        });
+        const badges = CAR_CLASSES.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 12px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${cc[c.key] || 0}</span>`).join('');
+        const tt = (typ) => typ === 'division' ? '실·본부' : typ === 'outsourcing' ? '외주' : '지점';
+        const rows = carItems.slice().sort((a, b) => (monthOf[a.station] || 99) - (monthOf[b.station] || 99)).map(it => {
+          const cm = carClassMeta(it.cls);
+          const mon = monthOf[it.station] ? (monthOf[it.station] + '월') : '-';
+          const rb = riskBadgeHtml(it.risk) || '<span style="color:#C0CED1;">-</span>';
+          const safe = String(it.station).replace(/'/g, "\\'");
+          return `<tr style="border-bottom:1px solid rgba(192,206,209,0.25);cursor:pointer;" onclick="openStationDetail(${year},'${safe}')">`
+            + `<td style="padding:8px 6px;"><span style="font-weight:600;color:#D20015;">${_esc(it.station)}</span> <span style="font-size:11px;color:#9EA2A1;">${tt(it.targetType)}</span></td>`
+            + `<td style="padding:8px 6px;text-align:center;color:#565A5B;">${mon}</td>`
+            + `<td style="padding:8px 6px;text-align:center;"><span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:980px;background:${cm.bg};color:${cm.color};">${cm.label}</span></td>`
+            + `<td style="padding:8px 6px;color:#303A3C;">${_esc(it.title || '(제목 없음)')}</td>`
+            + `<td style="padding:8px 6px;text-align:center;">${rb}</td>`
+            + `</tr>`;
+        }).join('');
+        html += `<div class="apple-card p-6 mb-6">`
+          + `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;cursor:pointer;" onclick="toggleSection('ovCarBody')">`
+          + `<span style="font-size:15px;font-weight:600;color:#303A3C;">개선조치요구서</span>`
+          + `<span style="font-size:12px;color:#9EA2A1;">${year}년 ${carItems.length}건</span>`
+          + `<span style="flex:1;"></span>${badges}`
+          + `<span id="ovCarBodyArrow" style="color:#9EA2A1;font-size:14px;margin-left:4px;">&#9656;</span></div>`
+          + `<div id="ovCarBody" class="hidden" style="margin-top:14px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;">`
+          + `<th style="text-align:left;padding:8px 6px;color:#565A5B;">심사대상</th><th style="padding:8px 6px;color:#565A5B;">심사월</th><th style="padding:8px 6px;color:#565A5B;">분류</th><th style="text-align:left;padding:8px 6px;color:#565A5B;">CAR 제목</th><th style="padding:8px 6px;color:#565A5B;">위험도</th>`
+          + `</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      }
+    } catch (e) { console.warn('overview CAR list failed:', e); }
+
     // 유형별 섹션 (기본 접힘)
     html += _ovSection('지점', 'ov_branch', [...completedStations], byName, year);
     html += _ovSection('실/본부', 'ov_division', [...completedDivisions], byName, year);
@@ -8428,10 +8494,80 @@ function renderAnalysis() {
   }
   html += `</div>`;
 
+  html += `<div id="carAnalysisSection" style="margin-top:20px;"></div>`;
+
   container.innerHTML = html;
 
   // Store data for chart rendering when detail sections are opened
   window._analysisData = { year, yearData, comparisons, riskItems, typeAvgs, stationGroups, heatmapData, consistencyData, priorityItems, regionCatAvgs, stationsTwoYearsAgo };
+
+  // v19.23.0: CAR 분석 (class·영역 2축)
+  renderCarAnalysis(year);
+}
+
+// v19.23.0: CAR 분석 (심각도 class · 영역 2축, 전 대상 집계)
+function renderCarAnalysis(year) {
+  const box = document.getElementById('carAnalysisSection');
+  if (!box) return;
+  const items = collectCarItems(year);
+  const titleH = `<h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">CAR 분석 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년 · 발견사항 ${items.length}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">개선조치요구서를 심각도·영역 기준으로 집계합니다 (전 심사대상)</p>`;
+  if (!items.length) {
+    box.innerHTML = `<div class="apple-card p-6">${titleH}<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:24px;">${year}년 입력된 CAR 발견사항이 없습니다. 상세 페이지의 개선조치요구서 현황에서 항목을 입력하세요.</div></div>`;
+    return;
+  }
+  const clsCount = {}; CAR_CLASSES.forEach(c => clsCount[c.key] = 0);
+  items.forEach(it => clsCount[it.cls] = (clsCount[it.cls] || 0) + 1);
+  const areaCount = {};
+  items.forEach(it => { const a = it.category || '(미분류)'; areaCount[a] = (areaCount[a] || 0) + 1; });
+  const areas = Object.keys(areaCount).sort((a, b) => areaCount[b] - areaCount[a]);
+  const class1Items = items.filter(it => it.cls === 'class1');
+
+  let html = `<div class="apple-card p-6">${titleH}`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">` + CAR_CLASSES.map(c =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 12px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${clsCount[c.key] || 0}</span>`
+  ).join('') + `</div>`;
+  html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">`
+    + `<div><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">심각도 분포</div><div style="position:relative;height:240px;"><canvas id="carClassDoughnut"></canvas></div></div>`
+    + `<div><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">영역별 건수</div><div style="position:relative;height:240px;"><canvas id="carAreaBar"></canvas></div></div>`
+    + `</div>`;
+  html += `<div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">영역 × 심각도</div>`;
+  html += `<div style="overflow-x:auto;margin-bottom:16px;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;"><th style="text-align:left;padding:8px 6px;color:#565A5B;">영역</th>`
+    + CAR_CLASSES.map(c => `<th style="text-align:center;padding:8px 6px;color:${c.color};">${c.label}</th>`).join('')
+    + `<th style="text-align:center;padding:8px 6px;color:#565A5B;">합계</th></tr></thead><tbody>`;
+  areas.forEach(a => {
+    const row = CAR_CLASSES.map(c => items.filter(it => (it.category || '(미분류)') === a && it.cls === c.key).length);
+    const tot = row.reduce((s, n) => s + n, 0);
+    html += `<tr style="border-bottom:1px solid rgba(192,206,209,0.25);"><td style="padding:7px 6px;">${_esc(a)}</td>`
+      + row.map(n => `<td style="text-align:center;padding:7px 6px;">${n || ''}</td>`).join('')
+      + `<td style="text-align:center;padding:7px 6px;font-weight:600;">${tot}</td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+  if (class1Items.length) {
+    html += `<div style="font-size:13px;font-weight:600;color:#D20015;margin-bottom:8px;">Class 1 주요 발견사항 (${class1Items.length}건)</div>`;
+    html += class1Items.map(it => {
+      const rb = riskBadgeHtml(it.risk);
+      return `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(192,206,209,0.25);"><span style="flex-shrink:0;font-size:11px;font-weight:600;padding:2px 8px;border-radius:980px;background:rgba(210,0,21,0.08);color:#D20015;cursor:pointer;" onclick="openStationDetail(${year},'${String(it.station).replace(/'/g, "\\'")}')">${_esc(it.station)}</span>${rb ? `<span style="flex-shrink:0;">${rb}</span>` : ''}<span style="font-size:13px;color:#303A3C;flex:1;min-width:0;">${_esc(it.title || '(제목 없음)')}</span><span style="font-size:11px;color:#9EA2A1;flex-shrink:0;">${_esc(it.category || '')}</span></div>`;
+    }).join('');
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+
+  ChartUtil.destroy('carClassDoughnut');
+  const dctx = document.getElementById('carClassDoughnut');
+  if (dctx) chartInstances['carClassDoughnut'] = new Chart(dctx, {
+    type: 'doughnut',
+    data: { labels: CAR_CLASSES.map(c => c.label), datasets: [{ data: CAR_CLASSES.map(c => clsCount[c.key] || 0), backgroundColor: CAR_CLASSES.map(c => c.color), borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 12, padding: 10 } }, datalabels: { display: (c) => c.dataset.data[c.dataIndex] > 0, color: '#fff', font: { size: 13, weight: '700' }, formatter: (v) => v || '' } } },
+    plugins: [ChartDataLabels]
+  });
+  ChartUtil.destroy('carAreaBar');
+  const bctx = document.getElementById('carAreaBar');
+  if (bctx) chartInstances['carAreaBar'] = new Chart(bctx, {
+    type: 'bar',
+    data: { labels: areas, datasets: [{ data: areas.map(a => areaCount[a]), backgroundColor: '#D20015', borderRadius: 3, barPercentage: 0.8 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } }, scales: { x: { beginAtZero: true, max: Math.max(...areas.map(a => areaCount[a]), 0) + 1, ticks: { stepSize: 1, font: { size: 11 } } }, y: { grid: { display: false }, ticks: { font: { size: 11 }, autoSkip: false } } }, plugins: { legend: { display: false }, datalabels: { display: true, anchor: 'end', align: 'right', offset: 4, color: '#1a1c1d', font: { size: 12, weight: '700' }, formatter: (v) => v || '' } } },
+    plugins: [ChartDataLabels]
+  });
 }
 
 function switchAnalysisSubTab(tab) {
@@ -10229,6 +10365,8 @@ function renderDataManagement() {
   renderUserManagement();
   // 커스텀 심사 대상 목록
   renderCustomStationList();
+  // v19.23.0: CAR 영역 마스터 편집 패널 (admin 전용)
+  renderCarCatPanel();
   // v19.14.4: 백업 목록 자동 로드 제거 — 토글 펼침 시에만 호출 (default 접힘 카드)
   // Populate export station dropdown
   const sel = document.getElementById('exportStation');
@@ -10849,6 +10987,36 @@ function setupFirebaseListeners() {
     console.warn('CAR listener cancelled:', err && err.code, err && err.message);
     _listenersAttached = false;
   });
+
+  // v19.23.0: CAR 항목(carItems) 실시간 동기화
+  dbRef('carItems').on('value', (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+    const local = SafeStorage.get(CARITEMS_STORAGE_KEY, {});
+    let updated = false;
+    for (const [key, val] of Object.entries(data)) {
+      const arr = _carItemsNormalize(val);
+      if (JSON.stringify(local[key]) !== JSON.stringify(arr)) { local[key] = arr; updated = true; }
+    }
+    if (updated) {
+      SafeStorage.set(CARITEMS_STORAGE_KEY, local);
+      try {
+        const wrap = document.getElementById('appWrapper');
+        if (wrap && wrap.style.display !== 'none') refreshCurrentView();
+      } catch (e) {}
+    }
+  }, (err) => { console.warn('carItems listener cancelled:', err && err.code); });
+
+  // v19.23.0: CAR 영역 마스터(carCategories) 실시간 동기화
+  dbRef('carCategories').on('value', (snapshot) => {
+    const fb = snapshot.val();
+    if (!fb) return;
+    const b = _carItemsNormalize(fb.branch), d = _carItemsNormalize(fb.division);
+    if (b.length || d.length) {
+      carCategoryConfig = { branch: b.length ? b : carCategoryConfig.branch, division: d.length ? d : carCategoryConfig.division };
+      SafeStorage.set(CARCATS_STORAGE_KEY, carCategoryConfig);
+    }
+  }, (err) => { console.warn('carCategories listener cancelled:', err && err.code); });
 
   // v19.11.0: Memo 실시간 동기화 — { year: { stationKey: { memoId: memo } } }
   // v19.11.13: RTDB가 source of truth + _unsynced 메모만 보호 (firstFire union 제거 — 삭제 전파 막던 버그 수정)
@@ -12146,9 +12314,42 @@ const CAR_CATEGORIES = [
 ];
 // v19.17.5: 실/본부 CAR 카테고리 (지점과 다름 — 참고자료 양식)
 const CAR_CATEGORIES_DIVISION = ['품질관리', '안전관리', '조직관리', '매뉴얼관리'];
+// v19.23.0: 영역 마스터 데이터화 — Firebase carCategories로 편집, 부재 시 위 상수가 기본값
+let carCategoryConfig = (function() {
+  const def = { branch: [...CAR_CATEGORIES], division: [...CAR_CATEGORIES_DIVISION] };
+  try {
+    const saved = SafeStorage.get(CARCATS_STORAGE_KEY, null);
+    if (saved && Array.isArray(saved.branch) && Array.isArray(saved.division) && saved.branch.length && saved.division.length) return saved;
+  } catch (e) {}
+  return def;
+})();
 function getCarCategories(key) {
-  return (typeof DIVISIONS !== 'undefined' && DIVISIONS[key]) ? CAR_CATEGORIES_DIVISION : CAR_CATEGORIES;
+  const isDiv = (typeof DIVISIONS !== 'undefined' && DIVISIONS[key]);
+  const cfg = isDiv ? carCategoryConfig.division : carCategoryConfig.branch;
+  if (Array.isArray(cfg) && cfg.length) return cfg;
+  return isDiv ? CAR_CATEGORIES_DIVISION : CAR_CATEGORIES; // 안전망
 }
+// v19.23.0: CAR 심각도(class) / 상태 마스터
+const CAR_CLASSES = [
+  { key: 'class1', label: 'Class 1', full: 'Class 1 (Major NCF)', color: '#D20015', bg: 'rgba(210,0,21,0.12)' },
+  { key: 'class2', label: 'Class 2', full: 'Class 2 (Minor NCF)', color: '#F59E0B', bg: 'rgba(245,158,11,0.16)' },
+  { key: 'concern', label: 'Concern', full: 'Concern', color: '#CA8A04', bg: 'rgba(234,179,8,0.20)' }
+];
+function carClassMeta(k) { return CAR_CLASSES.find(c => c.key === k) || { key: k || '', label: k || '미분류', full: k || '미분류', color: '#9EA2A1', bg: 'rgba(158,162,161,0.15)' }; }
+// v19.23.2: 위험도(Risk Level) 배지 — reportMeta RISK_MATRIX/RISK_COLORS 재사용
+function riskMeta(code) {
+  const raw = String(code == null ? '' : code).trim().toUpperCase().replace(/\s+/g, '');
+  const lvl = (typeof RISK_MATRIX !== 'undefined') ? RISK_MATRIX[raw] : null;
+  if (!lvl) return null;
+  return { code: raw, color: RISK_COLORS[lvl], fg: lvl === 'yellow' ? '#333333' : '#ffffff' };
+}
+function riskBadgeHtml(code) {
+  const m = riskMeta(code);
+  if (!m) return '';
+  return `<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:${m.color};color:${m.fg};">${m.code}</span>`;
+}
+const CAR_RISK_SEV = [5, 4, 3, 2, 1];
+const CAR_RISK_LIKE = ['A', 'B', 'C', 'D', 'E'];
 
 // --- Navigation ---
 function openStationDetail(year, station, _fromPopstate) {
@@ -13230,6 +13431,156 @@ function loadCarDataFromFirebase() {
     }
     if (updated) SafeStorage.set(CAR_STORAGE_KEY, local);
   }).catch(e => console.warn('CAR load from Firebase failed:', e));
+}
+
+// --- CAR Items (v19.23.0: 발견사항 개별 항목) ---
+function _carItemsNormalize(v) {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  if (v && typeof v === 'object') return Object.keys(v).sort((a, b) => (+a) - (+b)).map(i => v[i]).filter(Boolean);
+  return [];
+}
+function loadCarItems(year, station) {
+  const all = SafeStorage.get(CARITEMS_STORAGE_KEY, {});
+  return _carItemsNormalize(all[year + '_' + station]);
+}
+function saveCarItems(year, station, items) {
+  const all = SafeStorage.get(CARITEMS_STORAGE_KEY, {});
+  const key = year + '_' + station;
+  const clean = (items || []).filter(Boolean);
+  all[key] = clean;
+  SafeStorage.set(CARITEMS_STORAGE_KEY, all);
+  if (firebaseDb) {
+    const ref = dbRef('carItems');
+    if (ref) ref.child(key).set(clean).then(() => console.log('carItems saved:', key)).catch(e => console.warn('carItems Firebase save failed:', e));
+  }
+}
+function loadCarItemsFromFirebase() {
+  if (!firebaseDb) return;
+  dbRef('carItems').once('value').then(snap => {
+    const fb = snap.val();
+    if (!fb) return;
+    const local = SafeStorage.get(CARITEMS_STORAGE_KEY, {});
+    let updated = false;
+    for (const [key, val] of Object.entries(fb)) {
+      const arr = _carItemsNormalize(val);
+      if (JSON.stringify(local[key]) !== JSON.stringify(arr)) { local[key] = arr; updated = true; }
+    }
+    if (updated) SafeStorage.set(CARITEMS_STORAGE_KEY, local);
+  }).catch(e => console.warn('carItems load from Firebase failed:', e));
+}
+// 차트용 건수 리졸버: items 있으면 period×category 집계, 없으면 legacy car 건수
+// 직전 심사연도(해당 대상에 CAR 항목이 있는 가장 가까운 이전 연도)
+function _prevCarYear(year, station) {
+  const all = SafeStorage.get(CARITEMS_STORAGE_KEY, {});
+  let best = null;
+  for (const key of Object.keys(all)) {
+    const us = key.indexOf('_'); if (us < 0) continue;
+    if (key.slice(us + 1) !== station) continue;
+    const y = parseInt(key.slice(0, us));
+    if (!isNaN(y) && y < year && (best === null || y > best) && _carItemsNormalize(all[key]).length) best = y;
+  }
+  return best;
+}
+function carChartCounts(year, station) {
+  const items = loadCarItems(year, station);
+  if (!items.length) return loadCarData(year, station); // legacy(건수) fallback
+  const out = { current: {}, previous: {} };
+  getCarCategories(station).forEach(c => { out.current[c] = 0; out.previous[c] = 0; });
+  const bump = (obj, c) => { if (!(c in out.current)) { out.current[c] = 0; out.previous[c] = 0; } obj[c]++; };
+  items.forEach(it => bump(out.current, it.category || '(미분류)'));
+  // 직전 막대 = 직전 심사연도의 CAR 항목 (period 구분 없음)
+  const py = _prevCarYear(year, station);
+  if (py != null) loadCarItems(py, station).forEach(it => bump(out.previous, it.category || '(미분류)'));
+  return out;
+}
+// 분석용: 특정 연도 전체 대상의 CAR 항목 수집 (station·대상유형 부착)
+function _carItemTargetType(station) {
+  if (typeof DIVISIONS !== 'undefined' && DIVISIONS[station]) return 'division';
+  const region = (typeof getRegionForStation === 'function') ? getRegionForStation(station) : null;
+  return region === '협력사(본사)' ? 'outsourcing' : 'branch';
+}
+function collectCarItems(year) {
+  const all = SafeStorage.get(CARITEMS_STORAGE_KEY, {});
+  const out = [];
+  for (const [key, val] of Object.entries(all)) {
+    const us = key.indexOf('_');
+    if (us < 0) continue;
+    if (String(key.slice(0, us)) !== String(year)) continue;
+    const station = key.slice(us + 1);
+    _carItemsNormalize(val).forEach(it => out.push(Object.assign({}, it, { station: station, targetType: _carItemTargetType(station) })));
+  }
+  return out;
+}
+
+// --- CAR Categories 마스터 (v19.23.0: admin 편집) ---
+function saveCarCategories(cfg) {
+  carCategoryConfig = {
+    branch: (cfg.branch || []).map(s => String(s).trim()).filter(Boolean),
+    division: (cfg.division || []).map(s => String(s).trim()).filter(Boolean)
+  };
+  SafeStorage.set(CARCATS_STORAGE_KEY, carCategoryConfig);
+  if (firebaseDb) {
+    const ref = dbRef('carCategories');
+    if (ref) ref.set(carCategoryConfig).then(() => console.log('carCategories saved')).catch(e => console.warn('carCategories Firebase save failed:', e));
+  }
+}
+function loadCarCategoriesFromFirebase() {
+  if (!firebaseDb) return;
+  dbRef('carCategories').once('value').then(snap => {
+    const fb = snap.val();
+    if (!fb) return;
+    const b = _carItemsNormalize(fb.branch), d = _carItemsNormalize(fb.division);
+    if (b.length || d.length) {
+      carCategoryConfig = { branch: b.length ? b : carCategoryConfig.branch, division: d.length ? d : carCategoryConfig.division };
+      SafeStorage.set(CARCATS_STORAGE_KEY, carCategoryConfig);
+    }
+  }).catch(e => console.warn('carCategories load from Firebase failed:', e));
+}
+
+// 관리 페이지 — CAR 영역 마스터 편집 패널 (admin 전용)
+let _carCatDraft = null;
+function renderCarCatPanel() {
+  const card = document.getElementById('mgmt_carcat_card');
+  const box = document.getElementById('carCatPanel');
+  if (!card || !box) return;
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  card.style.display = isAdmin ? '' : 'none';
+  if (!isAdmin) return;
+  _carCatDraft = { branch: [...carCategoryConfig.branch], division: [...carCategoryConfig.division] };
+  _carCatRender();
+}
+function _carCatRender() {
+  const box = document.getElementById('carCatPanel');
+  if (!box || !_carCatDraft) return;
+  const listHtml = (which, label) => {
+    const rows = _carCatDraft[which].map((c, i) =>
+      `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;"><input class="apple-input" style="flex:1;padding:7px 10px;font-size:13px;" data-cc-which="${which}" data-cc-idx="${i}" value="${_esc(c)}"><button onclick="carCatRemoveRow('${which}',${i})" style="background:none;border:none;cursor:pointer;color:#9EA2A1;font-size:18px;padding:2px 8px;" title="삭제">&times;</button></div>`
+    ).join('');
+    return `<div style="margin-bottom:16px;"><div style="font-size:13px;font-weight:600;color:#303A3C;margin-bottom:8px;">${label}</div>${rows}<button onclick="carCatAddRow('${which}')" class="pill-btn pill-btn-outline" style="font-size:12px;padding:6px 12px;">+ 영역 추가</button></div>`;
+  };
+  box.innerHTML = listHtml('branch', '지점용 영역') + listHtml('division', '실/본부용 영역')
+    + `<button onclick="saveCarCategoriesFromPanel()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;margin-top:4px;">저장</button>`;
+}
+function _carCatSyncDom() {
+  if (!_carCatDraft) return;
+  document.querySelectorAll('#carCatPanel [data-cc-which]').forEach(el => {
+    const w = el.dataset.ccWhich, i = +el.dataset.ccIdx;
+    if (_carCatDraft[w] && _carCatDraft[w][i] !== undefined) _carCatDraft[w][i] = el.value;
+  });
+}
+function carCatAddRow(which) { _carCatSyncDom(); if (_carCatDraft && _carCatDraft[which]) { _carCatDraft[which].push(''); _carCatRender(); } }
+function carCatRemoveRow(which, idx) { _carCatSyncDom(); if (_carCatDraft && _carCatDraft[which]) { _carCatDraft[which].splice(idx, 1); _carCatRender(); } }
+function saveCarCategoriesFromPanel() {
+  _carCatSyncDom();
+  if (!_carCatDraft) return;
+  const cfg = {
+    branch: _carCatDraft.branch.map(s => String(s).trim()).filter(Boolean),
+    division: _carCatDraft.division.map(s => String(s).trim()).filter(Boolean)
+  };
+  if (!cfg.branch.length || !cfg.division.length) { showToast('각 목록에 최소 1개 영역이 필요합니다.', 'error'); return; }
+  saveCarCategories(cfg);
+  renderCarCatPanel();
+  showToast('CAR 영역이 저장되었습니다.', 'success');
 }
 
 // =============================================================================
@@ -14669,40 +15020,95 @@ onMemoDraftSave = function() {
   }
 };
 
+// v19.23.0: CAR 항목 리스트 에디터
+let carEditItems = [];
 function toggleCarEdit() {
   const chartArea = document.getElementById('sdCarChartArea');
   const editArea = document.getElementById('sdCarEditArea');
+  const extra = document.getElementById('sdCarExtra');
   const isEditing = !editArea.classList.contains('hidden');
   if (isEditing) {
     editArea.classList.add('hidden');
     chartArea.classList.remove('hidden');
+    if (extra) extra.classList.remove('hidden');
   } else {
-    // 입력 폼 채우기
-    const carData = loadCarData(stationDetailYear, stationDetailStation);
-    let rows = '';
-    getCarCategories(stationDetailStation).forEach(cat => {
-      rows += `<tr style="border-bottom:1px solid rgba(192,206,209,0.3);">
-        <td style="padding:8px 6px;color:#303A3C;">${cat}</td>
-        <td style="padding:8px 6px;text-align:center;"><input type="number" min="0" class="apple-input" style="width:60px;text-align:center;padding:6px;" value="${carData.previous[cat] || 0}" data-car-cat="${cat}" data-car-period="previous"></td>
-        <td style="padding:8px 6px;text-align:center;"><input type="number" min="0" class="apple-input" style="width:60px;text-align:center;padding:6px;" value="${carData.current[cat] || 0}" data-car-cat="${cat}" data-car-period="current"></td>
-      </tr>`;
-    });
-    document.getElementById('sdCarInputRows').innerHTML = rows;
+    if (extra) extra.classList.add('hidden');
+    carEditItems = loadCarItems(stationDetailYear, stationDetailStation).map(it => ({ ...it }));
+    editArea.innerHTML =
+      `<div style="font-size:12px;color:#9EA2A1;margin-bottom:12px;">발견사항을 항목 단위로 입력하세요 (영역·심각도·위험도·제목). 직전 막대는 직전 심사연도 데이터에서 자동으로 가져옵니다.</div>`
+      + `<div id="sdCarItemRows"></div>`
+      + `<button onclick="carAddItemRow()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 16px;margin-top:8px;">+ CAR 항목 추가</button>`
+      + `<div class="flex gap-2 mt-4"><button onclick="saveCarItemsFromInputs()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;">저장</button><button onclick="toggleCarEdit()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 20px;">취소</button></div>`;
+    renderCarEditorRows();
     chartArea.classList.add('hidden');
     editArea.classList.remove('hidden');
   }
 }
-
-function saveCarInputs() {
-  const carData = { current: {}, previous: {} };
-  document.querySelectorAll('#sdCarInputRows input').forEach(inp => {
-    const cat = inp.dataset.carCat;
-    const period = inp.dataset.carPeriod;
-    carData[period][cat] = parseInt(inp.value) || 0;
+function renderCarEditorRows() {
+  const box = document.getElementById('sdCarItemRows');
+  if (!box) return;
+  const cats = getCarCategories(stationDetailStation);
+  if (!carEditItems.length) {
+    box.innerHTML = `<div style="color:#9EA2A1;font-size:13px;text-align:center;padding:16px;background:#fafafa;border-radius:8px;">아직 항목이 없습니다. "+ CAR 항목 추가"로 발견사항을 입력하세요.</div>`;
+    return;
+  }
+  const ss = 'padding:6px 8px;font-size:13px;width:auto;';
+  box.innerHTML = carEditItems.map((it, i) => {
+    const extraCat = (it.category && !cats.includes(it.category)) ? `<option value="${_esc(it.category)}" selected>${_esc(it.category)} (미사용)</option>` : '';
+    const catOpts = cats.map(c => `<option value="${_esc(c)}"${it.category === c ? ' selected' : ''}>${_esc(c)}</option>`).join('');
+    const clsOpts = CAR_CLASSES.map(c => `<option value="${c.key}"${it.cls === c.key ? ' selected' : ''}>${c.label}</option>`).join('');
+    const rk = String(it.risk || '').toUpperCase();
+    const curSev = rk.charAt(0), curLike = rk.slice(1);
+    const sevOpts = `<option value="">심각도</option>` + CAR_RISK_SEV.map(n => `<option value="${n}"${curSev === String(n) ? ' selected' : ''}>${n}</option>`).join('');
+    const likeOpts = `<option value="">가능성</option>` + CAR_RISK_LIKE.map(l => `<option value="${l}"${curLike === l ? ' selected' : ''}>${l}</option>`).join('');
+    return `<div style="padding:10px;margin-bottom:8px;background:#fafafa;border-radius:10px;">`
+      + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">`
+      + `<select class="apple-input" style="${ss}" data-idx="${i}" data-field="category">${extraCat}${catOpts}</select>`
+      + `<select class="apple-input" style="${ss}" data-idx="${i}" data-field="cls">${clsOpts}</select>`
+      + `<span style="display:inline-flex;align-items:center;gap:3px;"><span style="font-size:11px;color:#9EA2A1;">위험도</span><select class="apple-input" style="${ss}" data-idx="${i}" data-field="riskSev" title="심각도">${sevOpts}</select><select class="apple-input" style="${ss}" data-idx="${i}" data-field="riskLike" title="가능성">${likeOpts}</select></span>`
+      + `<button onclick="carRemoveItemRow(${i})" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#9EA2A1;font-size:18px;padding:2px 8px;" title="삭제">×</button>`
+      + `</div>`
+      + `<input class="apple-input" style="width:100%;margin-top:6px;padding:7px 10px;font-size:13px;" data-idx="${i}" data-field="title" placeholder="제목 / 요약" value="${_esc(it.title || '')}">`
+      + `</div>`;
+  }).join('');
+}
+function _carSyncEditorFromDom() {
+  document.querySelectorAll('#sdCarItemRows [data-idx]').forEach(el => {
+    const i = +el.dataset.idx, f = el.dataset.field;
+    if (carEditItems[i]) carEditItems[i][f] = el.value;
   });
-  saveCarData(stationDetailYear, stationDetailStation, carData);
+}
+function carAddItemRow() {
+  _carSyncEditorFromDom();
+  const cats = getCarCategories(stationDetailStation);
+  carEditItems.push({ id: 'ci_' + Date.now() + '_' + Math.floor(Math.random() * 1e6), category: cats[0] || '', cls: 'class1', title: '' });
+  renderCarEditorRows();
+}
+function carRemoveItemRow(idx) {
+  _carSyncEditorFromDom();
+  carEditItems.splice(idx, 1);
+  renderCarEditorRows();
+}
+function saveCarItemsFromInputs() {
+  _carSyncEditorFromDom();
+  const clean = carEditItems
+    .filter(it => it && ((it.title && it.title.trim()) || it.category))
+    .map(it => {
+      const sev = it.riskSev || '', like = it.riskLike || '';
+      const risk = (sev && like) ? (sev + like) : '';
+      return {
+        id: it.id || ('ci_' + Date.now() + '_' + Math.floor(Math.random() * 1e6)),
+        category: it.category || '',
+        cls: it.cls || 'class1',
+        risk: risk,
+        title: (it.title || '').trim()
+      };
+    });
+  saveCarItems(stationDetailYear, stationDetailStation, clean);
   toggleCarEdit();
-  renderSDCarChart(carData);
+  renderSDCarChart(carChartCounts(stationDetailYear, stationDetailStation));
+  renderCarClassSummary(stationDetailYear, stationDetailStation);
+  renderCarItemsList(stationDetailYear, stationDetailStation);
   const chartEl = document.getElementById('sdCarChartArea');
   if (chartEl) chartEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
   showToast('저장 완료', 'success');
@@ -15002,8 +15408,9 @@ function renderDivisionDetail(year, division) {
         '<div id="sdCarEditArea" class="hidden">' +
           '<div style="font-size:12px;color:#9EA2A1;margin-bottom:12px;">각 분야별 개선조치요구서(CAR) 건수를 입력하세요</div>' +
           '<div class="overflow-x-auto"><table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #C0CED1;"><th style="text-align:left;padding:8px 6px;font-weight:600;color:#565A5B;">항목</th><th style="text-align:center;padding:8px 6px;font-weight:600;color:#565A5B;width:80px;">직전심사</th><th style="text-align:center;padding:8px 6px;font-weight:600;color:#D20015;width:80px;">금번심사</th></tr></thead><tbody id="sdCarInputRows"></tbody></table></div>' +
-          '<div class="flex gap-2 mt-4"><button onclick="saveCarInputs()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;">저장</button><button onclick="toggleCarEdit()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 20px;">취소</button></div>' +
+          '<div class="flex gap-2 mt-4"><button onclick="saveCarItemsFromInputs()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;">저장</button><button onclick="toggleCarEdit()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 20px;">취소</button></div>' +
         '</div>' +
+        '<div id="sdCarExtra" style="margin-top:12px;"><div id="sdCarClassSummary"></div><div id="sdCarItemsList" style="margin-top:10px;"></div></div>' +
       '</div>';
   }
 
@@ -15014,7 +15421,9 @@ function renderDivisionDetail(year, division) {
   // 차트 1: 점검표별 적합률 (Bar + Line)
   renderDivBarChart(d);
   // 차트 2: 개선조치요구서(CAR) 현황 — 지점과 동일 메커니즘 재사용 (CAR_CATEGORIES, year_실본부명 키)
-  renderSDCarChart(loadCarData(year, division));
+  renderSDCarChart(carChartCounts(year, division));
+  renderCarClassSummary(year, division);
+  renderCarItemsList(year, division);
 
   // 부적합 항목 목록 + 카테고리 테이블
   const tableArea = document.getElementById('sdCategoryTable');
@@ -15335,7 +15744,9 @@ function renderStationDetail(year, station) {
 
   // 차트 렌더
   renderSDBarChart(d);
-  renderSDCarChart(d.carData);
+  renderSDCarChart(carChartCounts(year, station));
+  renderCarClassSummary(year, station);
+  renderCarItemsList(year, station);
   renderSDRadarChart(d);
   renderSDDoughnutChart(d);
   renderSDCategoryTable(d);
@@ -15442,6 +15853,42 @@ function renderSDCarChart(carData) {
     },
     plugins: [ChartDataLabels]
   });
+}
+
+// v19.23.0: CAR 분류(class) 요약 배지 (금번 기준)
+function renderCarClassSummary(year, station) {
+  const box = document.getElementById('sdCarClassSummary');
+  if (!box) return;
+  const items = loadCarItems(year, station);
+  if (!items.length) { box.innerHTML = ''; return; }
+  const counts = {};
+  CAR_CLASSES.forEach(c => counts[c.key] = 0);
+  items.forEach(it => { counts[it.cls] = (counts[it.cls] || 0) + 1; });
+  const badges = CAR_CLASSES.map(c =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 11px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${counts[c.key] || 0}</span>`
+  ).join('');
+  box.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;"><span style="font-size:12px;color:#9EA2A1;margin-right:2px;">분류</span>${badges}</div>`;
+}
+
+// v19.23.0: CAR 항목 리스트 (접이식)
+function renderCarItemsList(year, station) {
+  const box = document.getElementById('sdCarItemsList');
+  if (!box) return;
+  const items = loadCarItems(year, station);
+  if (!items.length) { box.innerHTML = ''; return; }
+  const rows = items.map(it => {
+    const cm = carClassMeta(it.cls);
+    const rb = riskBadgeHtml(it.risk);
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid rgba(192,206,209,0.25);">`
+      + `<span style="flex-shrink:0;font-size:11px;font-weight:700;padding:2px 7px;border-radius:980px;background:${cm.bg};color:${cm.color};">${cm.label}</span>`
+      + (rb ? `<span style="flex-shrink:0;">${rb}</span>` : '')
+      + `<div style="min-width:0;flex:1;"><div style="font-size:13px;color:#303A3C;">${_esc(it.title || '(제목 없음)')}</div><div style="font-size:11px;color:#9EA2A1;">${_esc(it.category || '')}</div></div>`
+      + `</div>`;
+  }).join('');
+  box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:6px 0;" onclick="toggleSection('sdCarItemsBody')">`
+    + `<span style="font-size:13px;font-weight:600;color:#565A5B;">CAR 항목 ${items.length}건</span>`
+    + `<span id="sdCarItemsBodyArrow" style="color:#9EA2A1;font-size:13px;">▸</span></div>`
+    + `<div id="sdCarItemsBody" class="hidden">${rows}</div>`;
 }
 
 function renderSDRadarChart(d) {
@@ -15699,7 +16146,9 @@ Object.assign(window, {
   updateScheduleStatuses, calcScheduleStatus,
   // Station Detail
   openStationDetail, closeStationDetail, stationLink, renderDivisionDetail, gatherDivisionData,
-  toggleCarEdit, saveCarInputs, loadCarDataFromFirebase,
+  toggleCarEdit, loadCarDataFromFirebase,
+  carAddItemRow, carRemoveItemRow, saveCarItemsFromInputs, renderCarClassSummary, renderCarItemsList,
+  saveCarCategoriesFromPanel, carCatAddRow, carCatRemoveRow,
   // Detail page download (v19.8.0)
   toggleSdDownloadMenu, downloadDetailPDF, downloadDetailHTML, copyDetailHTMLToClipboard,
   // 전자결재 결과보고 입력 패널 (v19.17.0) — inline onclick/oninput 핸들러
