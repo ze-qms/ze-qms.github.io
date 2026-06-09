@@ -1691,7 +1691,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.24.2',
+  version: '19.24.4',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -15091,7 +15091,8 @@ function renderCarEditorRows() {
     box.innerHTML = `<div style="color:#9EA2A1;font-size:13px;text-align:center;padding:16px;background:#fafafa;border-radius:8px;">아직 항목이 없습니다. "+ CAR 항목 추가"로 발견사항을 입력하세요.</div>`;
     return;
   }
-  const ss = 'padding:6px 8px;font-size:13px;width:auto;';
+  const ss = 'padding:7px 32px 7px 10px;font-size:13px;width:auto;'; // 오른쪽 32px = apple-input 화살표 공간(겹침 방지)
+  const lbl = 'font-size:11px;font-weight:600;color:#9EA2A1;margin-bottom:5px;display:block;letter-spacing:-0.2px;';
   box.innerHTML = carEditItems.map((it, i) => {
     const extraCat = (it.category && !cats.includes(it.category)) ? `<option value="${_esc(it.category)}" selected>${_esc(it.category)} (미사용)</option>` : '';
     const catOpts = cats.map(c => `<option value="${_esc(c)}"${it.category === c ? ' selected' : ''}>${_esc(c)}</option>`).join('');
@@ -15100,14 +15101,19 @@ function renderCarEditorRows() {
     const curSev = rk.charAt(0), curLike = rk.slice(1);
     const sevOpts = `<option value="">심각도</option>` + CAR_RISK_SEV.map(n => `<option value="${n}"${curSev === String(n) ? ' selected' : ''}>${n}</option>`).join('');
     const likeOpts = `<option value="">가능성</option>` + CAR_RISK_LIKE.map(l => `<option value="${l}"${curLike === l ? ' selected' : ''}>${l}</option>`).join('');
-    return `<div style="padding:10px;margin-bottom:8px;background:#fafafa;border-radius:10px;">`
-      + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">`
-      + `<select class="apple-input" style="${ss}" data-idx="${i}" data-field="category">${extraCat}${catOpts}</select>`
-      + `<select class="apple-input" style="${ss}" data-idx="${i}" data-field="cls">${clsOpts}</select>`
-      + `<span style="display:inline-flex;align-items:center;gap:3px;"><span style="font-size:11px;color:#9EA2A1;">위험도</span><select class="apple-input" style="${ss}" data-idx="${i}" data-field="riskSev" title="심각도">${sevOpts}</select><select class="apple-input" style="${ss}" data-idx="${i}" data-field="riskLike" title="가능성">${likeOpts}</select></span>`
-      + `<button onclick="carRemoveItemRow(${i})" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#9EA2A1;font-size:18px;padding:2px 8px;" title="삭제">×</button>`
+    return `<div style="padding:14px;margin-bottom:10px;background:#fff;border:1px solid #E5EAEC;border-radius:12px;">`
+      // 1행: 번호 + 제목(주 입력) + 삭제
+      + `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">`
+      + `<span style="font-size:12px;font-weight:700;color:#C0CED1;flex-shrink:0;width:16px;text-align:center;">${i + 1}</span>`
+      + `<input class="apple-input" style="flex:1;min-width:0;padding:9px 12px;font-size:14px;" data-idx="${i}" data-field="title" placeholder="발견사항 제목 / 요약을 입력하세요" value="${_esc(it.title || '')}">`
+      + `<button onclick="carRemoveItemRow(${i})" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:#C0CED1;font-size:20px;line-height:1;padding:4px 6px;" title="항목 삭제" onmouseover="this.style.color='#D20015'" onmouseout="this.style.color='#C0CED1'">&times;</button>`
       + `</div>`
-      + `<input class="apple-input" style="width:100%;margin-top:6px;padding:7px 10px;font-size:13px;" data-idx="${i}" data-field="title" placeholder="제목 / 요약" value="${_esc(it.title || '')}">`
+      // 2행: 라벨 달린 컨트롤 (영역 / 분류 / 위험도)
+      + `<div style="display:flex;flex-wrap:wrap;gap:16px;padding-left:24px;">`
+      + `<div style="display:flex;flex-direction:column;"><label style="${lbl}">영역</label><select class="apple-input" style="${ss}" data-idx="${i}" data-field="category">${extraCat}${catOpts}</select></div>`
+      + `<div style="display:flex;flex-direction:column;"><label style="${lbl}">분류</label><select class="apple-input" style="${ss}" data-idx="${i}" data-field="cls">${clsOpts}</select></div>`
+      + `<div style="display:flex;flex-direction:column;"><label style="${lbl}">위험도 <span style="font-weight:400;">(심각도 × 가능성)</span></label><div style="display:flex;align-items:center;gap:6px;"><select class="apple-input" style="${ss}" data-idx="${i}" data-field="riskSev" title="심각도(1~5)">${sevOpts}</select><span style="color:#C0CED1;font-size:13px;">×</span><select class="apple-input" style="${ss}" data-idx="${i}" data-field="riskLike" title="가능성(A~E)">${likeOpts}</select></div></div>`
+      + `</div>`
       + `</div>`;
   }).join('');
 }
