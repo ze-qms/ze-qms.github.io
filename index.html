@@ -466,6 +466,18 @@ select.apple-input {
   .heatmap-header > div { padding: 10px 6px; font-size: 10px; }
   .heatmap-cell { padding: 10px 6px; border-radius: 6px; min-height: 36px; }
   .heatmap-label { padding: 10px 6px; font-size: 13px; }
+
+  /* v19.25.0: 상세 페이지 헤더 2단 배치 — 1행 [뒤로+제목(말줄임)] / 2행 [점검표 보기+다운로드 우측 정렬] */
+  #sdHeaderRow { flex-wrap: wrap; row-gap: 10px; }
+  #sdHeaderRow .sd-title-wrap { flex: 1 1 auto; min-width: 0; }
+  #sdTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* v19.25.0: iOS 입력 포커스 자동 줌 방지 — 16px 미만 input은 Safari가 화면을 줌인 */
+  input:not([type]), input[type="text"], input[type="password"], input[type="number"],
+  input[type="date"], input[type="search"], select, textarea { font-size: 16px !important; }
+
+  /* v19.25.0: 텍스트형 수정·삭제 버튼 터치 타겟 확보 */
+  .touch-text-btn { min-height: 36px; min-width: 36px; }
 }
 @media (min-width: 769px) {
   .desktop-tabs { display: flex; }
@@ -813,20 +825,20 @@ select.apple-input {
       <span id="envBadgeMobile" style="display:none;"></span>
       <span id="syncIndicatorMobile" style="display:none;"></span>
       <!-- 관리 (기어 아이콘) — manager 이상만 표시 -->
-      <button id="mobileGearBtn" onclick="switchTab(6)" style="background:none;border:none;cursor:pointer;padding:4px;display:none;">
+      <button id="mobileGearBtn" onclick="switchTab(6)" style="background:none;border:none;cursor:pointer;padding:10px;display:none;">
         <svg class="w-4 h-4" style="color:#9EA2A1;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       </button>
       <!-- 사용자 아바타 (탭→팝업) -->
       <div style="position:relative;">
-        <button id="mobileUserBtn" onclick="toggleMobileUserMenu()" style="background:rgba(0,0,0,0.06);border:none;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+        <button id="mobileUserBtn" onclick="toggleMobileUserMenu()" style="background:rgba(0,0,0,0.06);border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
           <svg class="w-4 h-4" style="color:#566062;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
         </button>
-        <div id="mobileUserMenu" class="hidden" style="position:absolute;right:0;top:38px;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:12px 16px;min-width:180px;z-index:100;">
+        <div id="mobileUserMenu" class="hidden" style="position:absolute;right:0;top:46px;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:12px 16px;min-width:180px;z-index:100;">
           <div style="font-size:13px;font-weight:600;color:#303A3C;" id="headerUserNameMobile"></div>
           <div style="font-size:11px;color:#D20015;font-weight:600;margin-top:2px;">안전기획팀</div>
           <div style="font-size:10px;color:#6E7273;margin-top:4px;"></div>
           <hr style="border:none;border-top:1px solid #f0f0f0;margin:8px 0;">
-          <button onclick="doLogout()" style="background:none;border:none;color:#D20015;font-size:13px;cursor:pointer;padding:0;">로그아웃</button>
+          <button onclick="doLogout()" style="background:none;border:none;color:#D20015;font-size:13px;cursor:pointer;padding:8px 0;">로그아웃</button>
         </div>
       </div>
     </div>
@@ -1551,7 +1563,7 @@ select.apple-input {
       <button onclick="closeStationDetail()" class="pill-btn pill-btn-outline" style="padding:6px 14px;font-size:13px;">
         <svg class="w-4 h-4 inline-block mr-1" style="vertical-align:-2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>뒤로
       </button>
-      <div>
+      <div class="sd-title-wrap">
         <h2 id="sdTitle" class="section-title" style="margin:0;"></h2>
         <p id="sdSubtitle" class="section-subtitle" style="margin:2px 0 0;"></p>
       </div>
@@ -1590,7 +1602,7 @@ select.apple-input {
       <div class="apple-card p-6">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <h3 style="font-size:15px;font-weight:600;color:#303A3C;margin:0;">개선조치요구서 현황</h3>
-          <button id="sdCarEditBtn" onclick="toggleCarEdit()" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:8px;color:#9EA2A1;font-size:16px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)';this.style.color='#D20015'" onmouseout="this.style.background='none';this.style.color='#9EA2A1'" title="편집">
+          <button id="sdCarEditBtn" onclick="toggleCarEdit()" style="background:none;border:none;cursor:pointer;padding:10px 12px;border-radius:8px;color:#9EA2A1;font-size:16px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)';this.style.color='#D20015'" onmouseout="this.style.background='none';this.style.color='#9EA2A1'" title="편집">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
         </div>
@@ -1695,7 +1707,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.24.8',
+  version: '19.25.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3011,7 +3023,7 @@ let allData = [];
 let currentScores = {};
 let currentChecklist = null;
 let chartInstances = {};
-function getChartHeight() { return window.innerWidth < 768 ? 220 : 350; }
+function getChartHeight() { return _isDeskViewport() ? 350 : 220; } // v19.25.0: CSS breakpoint(768px)와 판정 통일
 const STORAGE_KEY = 'eastar_' + APP_ENV + '_maturity_data';
 let viewEntries = [];
 let editingScores = {};
@@ -5911,7 +5923,7 @@ function renderScoreViewTable() {
   // 전체 그룹 (지점 먼저, 본부 다음 — gIdx는 연속)
   const groups = [...branchGroups, ...divisionGroups];
 
-  const isMobile = window.innerWidth < 768;
+  const isMobile = !_isDeskViewport(); // v19.25.0: CSS breakpoint(768px)와 판정 통일
 
   // === 공통 헬퍼: 점수 뱃지 생성 ===
   function makeTypeBadge(entry, type) {
@@ -6178,8 +6190,8 @@ function renderGroupReadOnlyDetail(gIdx, group) {
         const overallStyle = result.complianceRate >= 90 ? 'background:rgba(34,197,94,0.15);color:#22C55E' : result.complianceRate >= 70 ? 'background:rgba(245,158,11,0.15);color:#F59E0B' : 'background:rgba(210,0,21,0.15);color:#D20015';
         html += `<div><span style="font-size:11px;color:#9EA2A1;">적합률</span><span class="badge-pill" style="${overallStyle};font-size:13px;margin-left:4px;">${result.complianceRate.toFixed(1)}%</span></div>`;
         html += `<div class="flex gap-1">`;
-        html += `<button onclick="event.stopPropagation();startGroupTypeEdit(${gIdx},'${type}')" style="background:none;border:none;color:#D20015;font-size:12px;cursor:pointer;">수정</button>`;
-        html += `<button onclick="event.stopPropagation();deleteGroupType(${gIdx},'${type}')" style="background:none;border:none;color:#565A5B;font-size:12px;cursor:pointer;">삭제</button>`;
+        html += `<button onclick="event.stopPropagation();startGroupTypeEdit(${gIdx},'${type}')" class="touch-text-btn" style="background:none;border:none;color:#D20015;font-size:12px;cursor:pointer;padding:8px 10px;">수정</button>`;
+        html += `<button onclick="event.stopPropagation();deleteGroupType(${gIdx},'${type}')" class="touch-text-btn" style="background:none;border:none;color:#565A5B;font-size:12px;cursor:pointer;padding:8px 10px;">삭제</button>`;
         html += `</div></div>`;
         html += `<div style="font-size:11px;color:#6366F1;text-align:center;margin-top:6px;">S:${result.yesCount} U:${result.noCount} NA:${result.naCount}</div>`;
         html += `</div>`;
@@ -6199,8 +6211,8 @@ function renderGroupReadOnlyDetail(gIdx, group) {
         html += `<div class="flex justify-between items-center">`;
         html += `<div><span style="font-size:11px;color:#9EA2A1;">전체 평균</span><span class="badge-pill" style="${avgBadgeStyle(result.overallAverage)};font-size:13px;margin-left:4px;">${result.overallAverage.toFixed(2)}</span></div>`;
         html += `<div class="flex gap-1">`;
-        html += `<button onclick="event.stopPropagation();startGroupTypeEdit(${gIdx},'${type}')" style="background:none;border:none;color:#D20015;font-size:12px;cursor:pointer;">수정</button>`;
-        html += `<button onclick="event.stopPropagation();deleteGroupType(${gIdx},'${type}')" style="background:none;border:none;color:#565A5B;font-size:12px;cursor:pointer;">삭제</button>`;
+        html += `<button onclick="event.stopPropagation();startGroupTypeEdit(${gIdx},'${type}')" class="touch-text-btn" style="background:none;border:none;color:#D20015;font-size:12px;cursor:pointer;padding:8px 10px;">수정</button>`;
+        html += `<button onclick="event.stopPropagation();deleteGroupType(${gIdx},'${type}')" class="touch-text-btn" style="background:none;border:none;color:#565A5B;font-size:12px;cursor:pointer;padding:8px 10px;">삭제</button>`;
         html += `</div></div>`;
         html += `<div style="font-size:11px;color:#D20015;text-align:center;margin-top:6px;">상세보기 ></div>`;
         html += `</div>`;
@@ -9415,7 +9427,7 @@ function renderSchedule() {
         const tb = (i === 0) ? topBorder : '';
         html += `<tr style="cursor:pointer;${rowBg}" onclick="setSchedulePhase(2,'${item.id}')">`;
         if (i === 0) html += `<td data-label="월" style="${monthCellStyle}" rowspan="${items.length}">${m}월</td>`;
-        const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;" title="상세 보기">&#9654;</span>` : '';
+        const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;display:inline-block;padding:10px;margin:-10px;" title="상세 보기">&#9654;</span>` : '';
         html += `<td data-label="대상" style="${tb}font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
         html += `<td data-label="심사원" style="${tb}font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
         html += `<td data-label="심사 기간" style="${tb}text-align:center;font-size:12px;">${dateStr}</td>`;
@@ -9443,7 +9455,7 @@ function renderSchedule() {
       const tb = (i === 0) ? tbdBorder : '';
       html += `<tr style="cursor:pointer;" onclick="setSchedulePhase(2,'${item.id}')">`;
       if (i === 0) html += `<td data-label="월" style="${tbdCellStyle}" rowspan="${tbdItems.length}">미정</td>`;
-      const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;" title="상세 보기">&#9654;</span>` : '';
+      const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;display:inline-block;padding:10px;margin:-10px;" title="상세 보기">&#9654;</span>` : '';
       html += `<td data-label="대상" style="${tb}font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
       html += `<td data-label="심사원" style="${tb}font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
       html += `<td data-label="심사 기간" style="${tb}text-align:center;font-size:12px;">${dateStr}</td>`;
@@ -10664,8 +10676,8 @@ function renderAuditorList() {
     html += `<td style="text-align:center;font-size:13px;">${a.refreshTraining || '-'}</td>`;
     html += `<td style="text-align:center;"><span class="badge-pill" style="${ts.style}">${ts.label}</span></td>`;
     html += `<td style="text-align:center;">`;
-    html += `<button onclick="editAuditor(${i})" style="background:none;border:none;color:#D20015;font-size:13px;cursor:pointer;padding:4px 8px;">수정</button>`;
-    html += `<button onclick="deleteAuditor(${i})" style="background:none;border:none;color:#565A5B;font-size:13px;cursor:pointer;padding:4px 8px;">삭제</button>`;
+    html += `<button onclick="editAuditor(${i})" class="touch-text-btn" style="background:none;border:none;color:#D20015;font-size:13px;cursor:pointer;padding:8px 10px;">수정</button>`;
+    html += `<button onclick="deleteAuditor(${i})" class="touch-text-btn" style="background:none;border:none;color:#565A5B;font-size:13px;cursor:pointer;padding:8px 10px;">삭제</button>`;
     html += `</td></tr>`;
   });
 
@@ -10845,7 +10857,7 @@ function renderAuditorPicker(containerId, currentValue) {
   selected.forEach(name => {
     html += `<span style="display:inline-flex;align-items:center;gap:4px;background:#f9f9fb;border-radius:980px;padding:4px 12px;font-size:13px;color:#303A3C;">`;
     html += `${name}`;
-    html += `<button onclick="removeAuditorTag('${containerId}','${name}')" style="background:none;border:none;color:#D20015;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;">×</button>`;
+    html += `<button onclick="removeAuditorTag('${containerId}','${name}')" style="background:none;border:none;color:#D20015;font-size:16px;cursor:pointer;padding:8px;margin:-4px -6px -4px -2px;line-height:1;">×</button>`;
     html += `</span>`;
   });
   html += '</div>';
@@ -15507,7 +15519,7 @@ function renderDivisionDetail(year, division) {
       '<div class="apple-card" style="padding:16px;">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">' +
           '<h3 style="font-size:15px;font-weight:600;color:#303A3C;margin:0;">개선조치요구서 현황</h3>' +
-          '<button id="sdCarEditBtn" onclick="toggleCarEdit()" style="background:none;border:1px solid #C0CED1;cursor:pointer;padding:4px 10px;border-radius:8px;color:#565A5B;font-size:12px;" title="CAR 건수 편집">✎ 편집</button>' +
+          '<button id="sdCarEditBtn" onclick="toggleCarEdit()" style="background:none;border:1px solid #C0CED1;cursor:pointer;padding:8px 12px;border-radius:8px;color:#565A5B;font-size:12px;" title="CAR 건수 편집">✎ 편집</button>' +
         '</div>' +
         '<div id="sdCarChartArea" style="position:relative;height:320px;"><canvas id="sdCarChart"></canvas></div>' +
         '<div id="sdCarEditArea" class="hidden">' +
