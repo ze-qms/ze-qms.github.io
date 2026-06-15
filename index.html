@@ -1644,6 +1644,9 @@ select.apple-input {
       </div>
     </div>
 
+    <!-- VOC 모니터링 (지점 전용, 종합 점수 미반영 — 모니터링 지표) -->
+    <div id="sdVocSection"></div>
+
     <!-- 분야별 성숙도 평점 표 / 실본부: 카테고리별 상세 -->
     <div class="apple-card p-6 mb-6">
       <h3 id="sdCategoryTitle" style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:16px;">분야별 성숙도 평점</h3>
@@ -1707,7 +1710,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.25.0',
+  version: '19.26.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -2816,6 +2819,19 @@ const MATURITY_HEADER = {
   4: "1) 해당 업무에 대한 절차가 규정/문서로 마련되어 있는 상태\n2) 해당 업무에 대한 단순 이행 수준을 넘어 자체 분석, 평가를 통해 효율적으로 운영되고 있는 상태\n3) 지속적 개선을 실현하기 위해 선제적으로 해당 업무에 대해 잠재요인을 식별하고 개선된 실적이 있는 상태"
 };
 
+// VOC 모니터링 성숙도 점검표 (지점 전용, 1-4등급) — 2026년 모니터링 지표 (종합 점수 미반영)
+const CHECKLIST_VOC_MONITORING = {
+  "5. 고객 피드백(VOC) 관리에 관한 사항 (모니터링)": {
+    maxPoints: 16,
+    items: [
+      {id:"5.1",text:"항공사 직원은 VOC 등급 체계를 이해하고 있는가?",verification:"1) VOC 불만·칭송 등급 체계 숙지 여부 - 인터뷰\n2) 등급 정의서·운영지침 비치 또는 열람 가능 여부",manual:"1) AHM 3.9\n2) 사내 VOC 운영 지침",maturity:{1:"VOC 불만 및 칭송 등급 체계 자체를 인지하지 못함",2:"등급 체계의 존재는 인지하고 있으나, 각 등급의 구분 기준(법규 위반·매뉴얼 위반·응대태도 등)을 정확히 설명하지 못함",3:"등급별 구분 기준과 등급별 후속관리 방안을 설명할 수 있음\n- 인터뷰 실시",4:"등급별 관리방안을 숙지하여 지점 자체적인 VOC 등급 관리를 하고 있음"}},
+      {id:"5.2",text:"지점 내 최근 발생한 VOC 사례와 관련된 지점의 업무 절차는 적절한가?",verification:"1) 최근 발생 VOC 사례\n2) 해당 사례 관련 업무 절차 (SOP, 운송지침 등)\n3) 직원 절차 숙지 여부 - 인터뷰 실시",manual:"1) AHM 2.18.2\n2) AHM 4.8.4-바",maturity:{1:"최근 발생 VOC 사례와 관련된 지점 업무 절차가 SOP, 운송지침 등 내부 규정에 명시되어 있지 않음",2:"관련 업무 절차는 SOP, 운송지침 등 내부 규정에 반영되어 있으나, 인터뷰 시 직원의 숙지가 미흡함",3:"관련 업무 절차가 내부 규정에 반영되어 있으며, 직원이 해당 절차를 정확히 숙지하고 업무를 수행하고 있음",4:"VOC 발생 사례를 통해 기존 업무 절차의 미비점을 식별하여 SOP 개정 혹은 업무 절차 개선한 실적이 있음"}},
+      {id:"5.3",text:"VOC 등급에 따라 재발방지를 위한 대책을 수립하여 운영하는가?",verification:"1) C등급 CASE STUDY 작성·보관 이력\n2) B등급 사유서(시말서)·개선계획서 작성 및 이행 이력\n3) A등급 발생 시 후속 절차 이행 여부\n4) 재발방지 모니터링 기록 등",manual:"1) AHM 2.18.2\n2) AHM 4.8.4-바\n3) 사내 VOC 운영 지침",maturity:{1:"VOC 등급에 따른 조치 이력이 전무하며, 단순 사과·보상 차원에서 종결됨",2:"CX파트 요청에 따라 CASE STUDY·사유서 작성 이력은 있으나, 작성 내용에 따른 실질적 후속 개선조치가 이뤄지지 않음",3:"등급별 관리방안에 따라 조치하며, 작성 내용에 따라 개선조치가 시행됨",4:"시행된 재발방지 대책의 효용성을 주기적으로 모니터링하며, SOP·교육자료에 반영하여 표준화하고 있음"}},
+      {id:"5.4",text:"VOC 인입 사례를 통하여 외주협력업체 안전 및 품질관리를 실시하고 있는가?",verification:"1) 품질관리 체크리스트\n2) 교육일지·교안 확인\n3) 정례회의 회의록",manual:"1) AHM 2.15\n2) AHM 4.8.4-바",maturity:{1:"VOC 사례를 통한 외주협력업체 정보 공유 또는 관리 이력이 전무함",2:"VOC 사례를 외주협력업체에 정보 공유한 이력은 있으나, 정식 교육·회의 안건 등재로 이어지지 않음",3:"VOC 사례를 활용하여 외주협력업체 대상 교육 또는 정보 발행을 실시하고, 교육일지·회의록 등 증빙이 있음",4:"정기적으로(월/분기) VOC 사례를 통한 외주협력업체 정보 발행·교육을 실시하며, 회의체를 통해 후속조치 이행 여부를 점검한 실적이 있음"}}
+    ]
+  }
+};
+
 const CHECKLIST_REGISTRY = {
   // 지점 성숙도 (기존, 1-4등급)
   branch: { name:"지점 품질심사", checklist: CHECKLIST_BRANCH, scoring:"grade", category:"branch" },
@@ -2823,6 +2839,8 @@ const CHECKLIST_REGISTRY = {
   ramp: { name:"램프협력사 품질심사", checklist: CHECKLIST_RAMP, scoring:"grade", category:"branch" },
   // 지점 안전감사 (S/U/NA)
   safety_branch: { name:"지점 안전감사", checklist: CHECKLIST_SAFETY_BRANCH, scoring:"binary", category:"branch" },
+  // VOC 모니터링 (지점 전용, 1-4등급) — 모니터링 지표, 종합 점수 미반영 (category=branch_monitoring으로 집계 자동 제외)
+  voc_monitoring: { name:"VOC 모니터링", checklist: CHECKLIST_VOC_MONITORING, scoring:"grade", category:"branch_monitoring" },
   // 외주협력업체 점검 (S/U/NA)
   outsourcing: { name:"외주협력업체 점검", checklist: CHECKLIST_OUTSOURCING, scoring:"binary", category:"outsourcing" },
   // 실/본부 품질심사 (S/U/NA)
@@ -2853,8 +2871,11 @@ const DIVISION_TYPES = Object.entries(CHECKLIST_REGISTRY)
   .filter(([_, r]) => r.category === 'division').map(([k]) => k);
 const OUTSOURCING_TYPES = Object.entries(CHECKLIST_REGISTRY)
   .filter(([_, r]) => r.category === 'outsourcing').map(([k]) => k);
+// VOC 모니터링 등 지점 모니터링 점검표 (종합 점수 미반영, 별도 표출)
+const MONITORING_BRANCH_TYPES = Object.entries(CHECKLIST_REGISTRY)
+  .filter(([_, r]) => r.category === 'branch_monitoring').map(([k]) => k);
 const TYPES_WITH_COMPANY = ['pax', 'ramp'];
-const TYPE_SHORT_LABELS = { branch:'지점', pax:'여객', ramp:'램프', safety_branch:'안전감사', outsourcing:'외주협력' };
+const TYPE_SHORT_LABELS = { branch:'지점', pax:'여객', ramp:'램프', safety_branch:'안전감사', outsourcing:'외주협력', voc_monitoring:'VOC' };
 
 let selectedAuditCategory = 'all'; // 'all', 'branch', or 'division'
 let selectedViewCategory = 'all'; // 'all', 'branch', or 'division'
@@ -4997,6 +5018,11 @@ function renderTypeStatusCards() {
       OUTSOURCING_TYPES.forEach(key => {
         types.push({ key, label: CHECKLIST_REGISTRY[key].name });
       });
+    } else {
+      // 일반 지점에 VOC 모니터링 현황 추가 (모니터링 지표, 종합 점수 미반영)
+      MONITORING_BRANCH_TYPES.forEach(key => {
+        types.push({ key, label: CHECKLIST_REGISTRY[key].name });
+      });
     }
   }
   let html = '';
@@ -5057,6 +5083,12 @@ function inputShowTypes() {
       OUTSOURCING_TYPES.forEach(key => {
         const reg = CHECKLIST_REGISTRY[key];
         types.push({ key, label: reg.name + ' 점검표', desc: 'S(적합) / U(부적합) / N/A 방식', scoring: reg.scoring });
+      });
+    } else {
+      // 일반 지점에 VOC 모니터링 점검표 추가 (모니터링 지표, 종합 점수 미반영)
+      MONITORING_BRANCH_TYPES.forEach(key => {
+        const reg = CHECKLIST_REGISTRY[key];
+        types.push({ key, label: reg.name + ' 점검표', desc: '고객 피드백 모니터링 (1~4등급)', scoring: reg.scoring });
       });
     }
   }
@@ -5557,7 +5589,8 @@ function saveAssessment() {
 
   const record = {
     year, station, type, region, auditor, auditDate, auditDateStart, auditDateEnd,
-    auditCategory: selectedAuditCategory,
+    // VOC 등 모니터링 점검표는 branch_monitoring으로 저장 → 종합 점수 집계에서 자동 제외
+    auditCategory: MONITORING_BRANCH_TYPES.includes(type) ? 'branch_monitoring' : selectedAuditCategory,
     scoringMethod: getScoringMethod(selectedType),
     scores: { ...currentScores },
     remarks: { ...currentRemarks }
@@ -5763,7 +5796,7 @@ function viewSearch() {
     for (const reg of regionsToShow) {
       for (const station of REGIONS[reg].stations) {
         if (viewTargetVal && station !== viewTargetVal) continue;
-        for (const t of ALL_BRANCH_TYPES) {
+        for (const t of [...ALL_BRANCH_TYPES, ...MONITORING_BRANCH_TYPES]) {
           const company = TYPES_WITH_COMPANY.includes(t) ? (HANDLING_COMPANIES[t]?.[station] || '') : undefined;
           const record = findRecord(year, station, t, company || undefined);
           viewEntries.push({ station, type: t, company: company || '', region: reg, year, record: record || null, auditCategory: 'branch' });
@@ -5839,8 +5872,8 @@ function renderViewSummaryCards(entries, year) {
   const completed = entries.filter(e => e.record);
   const pending = entries.length - completed.length;
 
-  // 지점(grade)과 본부(binary) 분리 집계
-  const gradeCompleted = completed.filter(e => getScoringMethod(e.type) !== 'binary');
+  // 지점(grade)과 본부(binary) 분리 집계 (VOC 모니터링은 종합 점수 미반영 → 제외)
+  const gradeCompleted = completed.filter(e => getScoringMethod(e.type) !== 'binary' && !MONITORING_BRANCH_TYPES.includes(e.type));
   const binaryCompleted = completed.filter(e => getScoringMethod(e.type) === 'binary');
 
   const totalAvg = gradeCompleted.length > 0
@@ -5955,8 +5988,8 @@ function renderScoreViewTable() {
       const isDivision = group.auditCategory === 'division';
       const rowId = `viewGroup_${gIdx}`;
       const anyRecord = Object.values(group.types).find(e => e.record)?.record;
-      const completedTypes = Object.values(group.types).filter(e => e.record);
-      const status = makeStatusBadge(completedTypes, Object.values(group.types).length);
+      const completedTypes = Object.values(group.types).filter(e => e.record && !MONITORING_BRANCH_TYPES.includes(e.type));
+      const status = makeStatusBadge(completedTypes, Object.values(group.types).filter(e => !MONITORING_BRANCH_TYPES.includes(e.type)).length);
 
       // allData 우선, 없으면 scheduleData 보완
       const mSchItem = scheduleData.find(s => s.year == group.year && s.station === group.station);
@@ -6037,8 +6070,8 @@ function renderScoreViewTable() {
       const gIdx = groups.indexOf(group);
       const rowId = `viewGroup_${gIdx}`;
       const anyRecord = Object.values(group.types).find(e => e.record)?.record;
-      const completedTypes = Object.values(group.types).filter(e => e.record);
-      const totalTypes = Object.values(group.types).length;
+      const completedTypes = Object.values(group.types).filter(e => e.record && !MONITORING_BRANCH_TYPES.includes(e.type));
+      const totalTypes = Object.values(group.types).filter(e => !MONITORING_BRANCH_TYPES.includes(e.type)).length;
       const status = makeStatusBadge(completedTypes, totalTypes);
 
       // allData 우선, 없으면 scheduleData에서 보완
@@ -6092,8 +6125,8 @@ function renderScoreViewTable() {
       const gIdx = groups.indexOf(group);
       const rowId = `viewGroup_${gIdx}`;
       const anyRecord = Object.values(group.types).find(e => e.record)?.record;
-      const completedTypes = Object.values(group.types).filter(e => e.record);
-      const totalTypes = Object.values(group.types).length;
+      const completedTypes = Object.values(group.types).filter(e => e.record && !MONITORING_BRANCH_TYPES.includes(e.type));
+      const totalTypes = Object.values(group.types).filter(e => !MONITORING_BRANCH_TYPES.includes(e.type)).length;
       const status = makeStatusBadge(completedTypes, totalTypes);
 
       let dateDisplay = '-', auditorDisplay = '-';
@@ -8282,6 +8315,37 @@ function renderAnalysis() {
   html += `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div>`;
   html += `</div>`;
 
+  // Card 10: VOC 모니터링 (종합 점수 미반영, 모니터링 지표) — 지점별 비교
+  const vocCatName = '5. 고객 피드백(VOC) 관리에 관한 사항 (모니터링)';
+  const vocItemsDef = (CHECKLIST_VOC_MONITORING[vocCatName] && CHECKLIST_VOC_MONITORING[vocCatName].items) || [];
+  const vocStations = allData.filter(d => d.year == year && d.type === 'voc_monitoring').map(r => {
+    const res = calculateScores(r.scores, CHECKLIST_VOC_MONITORING);
+    return { station: r.station, region: r.region || '', avg: res.overallAverage, scores: r.scores || {} };
+  }).sort((a, b) => (b.avg || 0) - (a.avg || 0));
+  const vocAvgAll = vocStations.length ? (vocStations.reduce((s, v) => s + (v.avg || 0), 0) / vocStations.length) : null;
+  const vocData = { stations: vocStations, items: vocItemsDef, avgAll: vocAvgAll };
+  html += `<div class="apple-card" style="padding:20px;cursor:pointer;transition:all 0.15s ease;"
+    onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'"
+    onmouseout="this.style.boxShadow='none'"
+    onclick="toggleAnalysisDetail('analysisDetailVoc')">`;
+  html += `<div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">VOC 모니터링</div>`;
+  html += `<div style="font-size:13px;color:#303A3C;margin-bottom:8px;">지점별 고객 피드백 점검</div>`;
+  html += `<div><span style="font-size:24px;font-weight:600;color:#0067C4;">${vocStations.length}</span><span style="font-size:12px;color:#9EA2A1;margin-left:4px;">점검 지점${vocAvgAll != null ? ' · 평균 ' + vocAvgAll.toFixed(2) : ''}</span></div>`;
+  html += `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div>`;
+  html += `</div>`;
+
+  // Card 11: CAR 분석 (접이식 — 클릭 시 펼침)
+  const carCount = (typeof collectCarItems === 'function') ? collectCarItems(year).length : 0;
+  html += `<div class="apple-card" style="padding:20px;cursor:pointer;transition:all 0.15s ease;"
+    onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'"
+    onmouseout="this.style.boxShadow='none'"
+    onclick="toggleAnalysisDetail('analysisDetailCar')">`;
+  html += `<div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">CAR 분석</div>`;
+  html += `<div style="font-size:13px;color:#303A3C;margin-bottom:8px;">개선조치요구서 집계</div>`;
+  html += `<div><span style="font-size:24px;font-weight:600;color:#D20015;">${carCount}</span><span style="font-size:12px;color:#9EA2A1;margin-left:4px;">발견사항</span></div>`;
+  html += `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div>`;
+  html += `</div>`;
+
   html += '</div>';
 
   // ===== Detail Sections (hidden by default) =====
@@ -8553,20 +8617,48 @@ function renderAnalysis() {
   }
   html += `</div>`;
 
-  html += `<div id="carAnalysisSection" style="margin-top:20px;"></div>`;
+  // Detail VOC: VOC 모니터링 — 지점별 비교
+  html += `<div id="analysisDetailVoc" class="hidden apple-card p-6 mb-6 fade-in">`;
+  html += `<h3 style="font-size:17px;font-weight:600;color:#303A3C;margin-bottom:4px;">VOC 모니터링 — 지점별 비교</h3>`;
+  html += `<p style="font-size:13px;color:#9EA2A1;margin-bottom:16px;">모니터링 지표입니다. 성숙도 종합 점수에는 반영되지 않습니다.</p>`;
+  if (!vocData.stations.length) {
+    html += `<div style="color:#9EA2A1;text-align:center;padding:20px;">${year}년 VOC 모니터링 점검 데이터가 없습니다.</div>`;
+  } else {
+    html += `<div style="height:${getChartHeight()}px;margin-bottom:20px;"><canvas id="vocCompareChart"></canvas></div>`;
+    html += `<h4 style="font-size:14px;font-weight:600;color:#303A3C;margin-bottom:8px;">지점별 항목 점수</h4>`;
+    html += `<div class="overflow-x-auto"><table class="apple-table compact-mobile" style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f9f9fb;border-bottom:2px solid #C0CED1;">`;
+    html += `<th style="text-align:left;padding:8px;">지점</th>`;
+    vocData.items.forEach(it => { html += `<th style="text-align:center;padding:8px;white-space:nowrap;">${it.id}</th>`; });
+    html += `<th style="text-align:center;padding:8px;">평균</th></tr></thead><tbody>`;
+    const vBadge = (v) => {
+      if (v === 'N/A') return `<td style="text-align:center;padding:8px;"><span style="font-size:12px;color:#9EA2A1;">N/A</span></td>`;
+      const n = (v !== undefined && v !== null) ? Number(v) : null;
+      if (n === null || isNaN(n)) return `<td style="text-align:center;padding:8px;color:#C0CED1;">-</td>`;
+      return `<td style="text-align:center;padding:8px;"><span class="badge-pill" style="${avgBadgeStyle(n)}">${n}</span></td>`;
+    };
+    vocData.stations.forEach(s => {
+      html += `<tr style="border-bottom:1px solid rgba(192,206,209,0.3);cursor:pointer;" onclick="openStationDetail(${year},'${String(s.station).replace(/'/g, "\\'")}')">`;
+      html += `<td style="padding:8px;font-weight:600;color:#303A3C;">${_esc(s.station)}</td>`;
+      vocData.items.forEach(it => { html += vBadge(s.scores[it.id]); });
+      html += `<td style="text-align:center;padding:8px;"><span class="badge-pill" style="${s.avg != null && !isNaN(s.avg) ? avgBadgeStyle(s.avg) : 'color:#9EA2A1;'}">${s.avg != null && !isNaN(s.avg) ? s.avg.toFixed(2) : '-'}</span></td>`;
+      html += `</tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  html += `</div>`;
+
+  // v19.26.1: CAR 분석을 접이식으로 전환 — 펼칠 때 renderCarAnalysis 호출 (차트 0크기 방지)
+  html += `<div id="analysisDetailCar" class="hidden mb-6 fade-in" style="margin-top:20px;"><div id="carAnalysisInner"></div></div>`;
 
   container.innerHTML = html;
 
   // Store data for chart rendering when detail sections are opened
-  window._analysisData = { year, yearData, comparisons, riskItems, typeAvgs, stationGroups, heatmapData, consistencyData, priorityItems, regionCatAvgs, stationsTwoYearsAgo };
-
-  // v19.23.0: CAR 분석 (class·영역 2축)
-  renderCarAnalysis(year);
+  window._analysisData = { year, yearData, comparisons, riskItems, typeAvgs, stationGroups, heatmapData, consistencyData, priorityItems, regionCatAvgs, stationsTwoYearsAgo, vocData };
 }
 
 // v19.23.0: CAR 분석 (심각도 class · 영역 2축, 전 대상 집계)
 function renderCarAnalysis(year) {
-  const box = document.getElementById('carAnalysisSection');
+  const box = document.getElementById('carAnalysisInner');
   if (!box) return;
   const items = collectCarItems(year);
   const titleH = `<h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">CAR 분석 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년 · 발견사항 ${items.length}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">개선조치요구서를 심각도·영역 기준으로 집계합니다 (전 심사대상)</p>`;
@@ -8999,7 +9091,7 @@ function renderDivisionRiskChart(yearData) {
 
 function toggleAnalysisDetail(id) {
   // Close all other details
-  ['analysisDetail1','analysisDetail2','analysisDetail3','analysisDetail4','analysisDetail5','analysisDetail6','analysisDetail7','analysisDetail8','analysisDetail9'].forEach(detailId => {
+  ['analysisDetail1','analysisDetail2','analysisDetail3','analysisDetail4','analysisDetail5','analysisDetail6','analysisDetail7','analysisDetail8','analysisDetail9','analysisDetailVoc','analysisDetailCar'].forEach(detailId => {
     if (detailId !== id) document.getElementById(detailId)?.classList.add('hidden');
   });
 
@@ -9025,12 +9117,37 @@ function toggleAnalysisDetail(id) {
     else if (id === 'analysisDetail3') renderTypeCompChart(data);
     else if (id === 'analysisDetail8') renderPriorityChart(data);
     else if (id === 'analysisDetail9') renderRegionalRadarChart(data);
+    else if (id === 'analysisDetailVoc') renderVocCompareChart(data);
+    else if (id === 'analysisDetailCar') renderCarAnalysis(data.year);
   }
 }
 
 function closeAnalysisModal() {
   document.getElementById('analysisModalOverlay').classList.remove('active');
   document.body.style.overflow = '';
+}
+
+function renderVocCompareChart(data) {
+  destroyChart('vocCompareChart');
+  const ctx = document.getElementById('vocCompareChart')?.getContext('2d');
+  if (!ctx) return;
+  const st = (data.vocData && data.vocData.stations) || [];
+  if (!st.length) return;
+  const labels = st.map(s => s.station);
+  const vals = st.map(s => (s.avg != null && !isNaN(s.avg)) ? +s.avg.toFixed(2) : 0);
+  const colors = vals.map(v => v >= 3.5 ? '#22C55E' : v >= 2.5 ? '#F59E0B' : '#D20015');
+  chartInstances['vocCompareChart'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'VOC 평균', data: vals, backgroundColor: colors, borderRadius: 4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { min: 0, max: 4, ticks: { stepSize: 0.5 }, grid: { color: 'rgba(192,206,209,0.3)' } }, x: { grid: { display: false } } },
+      plugins: { legend: { display: false } }
+    }
+  });
 }
 
 function renderTrendChart(data) {
@@ -11532,10 +11649,11 @@ function renderHome() {
   const completedScheduledHome = [...completedStations].filter(s => scheduledBranchHome.has(s)).length;
   const completionRate = totalStations > 0 ? ((completedScheduledHome / totalStations) * 100).toFixed(0) : '0';
 
-  // Overall average (grade 방식만 집계, binary 방식 제외, 협력사 제외, 전항목 N/A 제외)
+  // Overall average (grade 방식만 집계, binary 방식 제외, 협력사 제외, VOC 모니터링 제외, 전항목 N/A 제외)
   let totalAvg = 0, totalCount = 0;
   yearData.forEach(d => {
     if (getScoringMethod(d.type) === 'binary') return;
+    if (MONITORING_BRANCH_TYPES.includes(d.type)) return; // VOC 등 모니터링 점검표는 종합 점수 미반영
     if (d.region === '협력사(본사)') return;
     const result = calculateScores(d.scores, getChecklist(d.type));
     if (result.totalItems === 0) return;
@@ -15241,6 +15359,9 @@ function gatherStationData(year, station) {
   const branchResult = branchRecord ? calculateScores(branchRecord.scores, CHECKLIST_BRANCH) : null;
   const paxResult = paxRecord ? calculateScores(paxRecord.scores, CHECKLIST_PAX) : null;
   const rampResult = rampRecord ? calculateScores(rampRecord.scores, CHECKLIST_RAMP) : null;
+  // VOC 모니터링 (모니터링 지표 — 종합 평균/레이더/도넛에는 미포함, 별도 섹션으로만 표출)
+  const vocRecord = stationRecords.find(d => d.type === 'voc_monitoring');
+  const vocResult = vocRecord ? calculateScores(vocRecord.scores, CHECKLIST_VOC_MONITORING) : null;
 
   // 직전 심사 데이터 탐색
   let prevYear = null;
@@ -15318,6 +15439,7 @@ function gatherStationData(year, station) {
     year, station, region, auditor, dateStart, dateEnd,
     paxCompany, rampCompany,
     branchResult, paxResult, rampResult,
+    vocRecord, vocResult,
     prevYear,
     prevBranchResult, prevPaxResult, prevRampResult,
     currentOverall, prevOverall,
@@ -15866,8 +15988,56 @@ function renderStationDetail(year, station) {
   renderCarItemsList(year, station);
   renderSDRadarChart(d);
   renderSDDoughnutChart(d);
+  renderSDVocSection(d);
   renderSDCategoryTable(d);
   // v19.11.1: Station Detail 메모 카드 제거 (Phase 2 하단으로 이동)
+}
+
+// VOC 모니터링 독립 섹션 (지점 전용) — 결과창(항목별 점수 + VOC 평균) + 항목 표.
+// 모니터링 지표이므로 종합 평균/레이더/도넛에는 미반영, 직전 대비 증감도 표시하지 않음.
+function renderSDVocSection(d) {
+  const box = document.getElementById('sdVocSection');
+  if (!box) return;
+  const cat = '5. 고객 피드백(VOC) 관리에 관한 사항 (모니터링)';
+  const items = (CHECKLIST_VOC_MONITORING[cat] && CHECKLIST_VOC_MONITORING[cat].items) || [];
+  // 미점검 시 섹션 숨김
+  if (!d.vocRecord || !d.vocResult) { box.innerHTML = ''; return; }
+  const scores = d.vocRecord.scores || {};
+  const remarks = d.vocRecord.remarks || {};
+  const avg = d.vocResult.overallAverage;
+  const avgStr = (avg !== null && avg !== undefined && !isNaN(avg)) ? avg.toFixed(2) : '-';
+  const avgStyle = (avg !== null && avg !== undefined && !isNaN(avg)) ? avgBadgeStyle(avg) : 'background:rgba(158,162,161,0.12);color:#9EA2A1;';
+
+  // 항목 표
+  let rowsHtml = '';
+  items.forEach(it => {
+    const v = scores[it.id];
+    const isNa = v === 'N/A';
+    const num = (v !== undefined && v !== null && v !== 'N/A') ? Number(v) : null;
+    const badge = isNa
+      ? `<span style="display:inline-block;padding:2px 10px;border-radius:8px;font-weight:600;font-size:13px;background:rgba(158,162,161,0.12);color:#9EA2A1;">N/A</span>`
+      : (num !== null
+        ? `<span style="display:inline-block;padding:2px 10px;border-radius:8px;font-weight:600;font-size:13px;${avgBadgeStyle(num)}">${num}</span>`
+        : `<span style="color:#C0CED1;">-</span>`);
+    const rm = remarks[it.id] ? `<div style="font-size:12px;color:#9EA2A1;margin-top:3px;">${_esc(remarks[it.id])}</div>` : '';
+    rowsHtml += `<tr style="border-bottom:1px solid rgba(192,206,209,0.3);">`
+      + `<td style="padding:10px 8px;vertical-align:top;font-weight:600;color:#303A3C;white-space:nowrap;">${it.id}</td>`
+      + `<td style="padding:10px 8px;color:#303A3C;">${_esc(it.text)}${rm}</td>`
+      + `<td style="padding:10px 8px;text-align:center;vertical-align:top;">${badge}</td></tr>`;
+  });
+
+  box.innerHTML = `<div class="apple-card p-6 mb-6">`
+    + `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">`
+    + `<h3 style="font-size:15px;font-weight:600;color:#303A3C;margin:0;">VOC 모니터링</h3>`
+    + `<span style="font-size:13px;font-weight:700;padding:2px 10px;border-radius:980px;${avgStyle}">평균 ${avgStr}</span>`
+    + `<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:980px;background:rgba(0,103,196,0.1);color:#0067C4;">모니터링 지표 · 종합 점수 미반영</span></div>`
+    + `<p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">고객 피드백(VOC) 관리에 관한 사항</p>`
+    + `<div class="overflow-x-auto"><table style="width:100%;border-collapse:collapse;font-size:13px;">`
+    + `<thead><tr style="background:#f9f9fb;border-bottom:2px solid #C0CED1;">`
+    + `<th style="text-align:left;padding:10px 8px;font-weight:600;color:#303A3C;white-space:nowrap;">항목</th>`
+    + `<th style="text-align:left;padding:10px 8px;font-weight:600;color:#303A3C;">점검 내용</th>`
+    + `<th style="text-align:center;padding:10px 8px;font-weight:600;color:#303A3C;">성숙도</th></tr></thead>`
+    + `<tbody>${rowsHtml}</tbody></table></div></div>`;
 }
 
 // --- Charts ---
