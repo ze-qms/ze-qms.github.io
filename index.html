@@ -1721,7 +1721,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.27.6',
+  version: '19.27.7',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8421,8 +8421,8 @@ function renderAnalysis() {
   html += `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div>`;
   html += `</div>`;
 
-  // Card 11: CAR 분석 (접이식 — 클릭 시 펼침)
-  const carCount = (typeof collectCarItems === 'function') ? collectCarItems(year).length : 0;
+  // Card 11: CAR 분석 (접이식 — 클릭 시 펼침). v19.27.7: 지점 분석이므로 지점 CAR만 집계
+  const carCount = (typeof collectCarItems === 'function') ? collectCarItems(year).filter(it => it.targetType === 'branch').length : 0;
   html += `<div class="apple-card" style="padding:20px;cursor:pointer;transition:all 0.15s ease;"
     onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'"
     onmouseout="this.style.boxShadow='none'"
@@ -8743,12 +8743,14 @@ function renderAnalysis() {
   window._analysisData = { year, yearData, comparisons, riskItems, typeAvgs, stationGroups, heatmapData, consistencyData, priorityItems, regionCatAvgs, stationsTwoYearsAgo, vocData };
 }
 
-// v19.23.0: CAR 분석 (심각도 class · 영역 2축, 전 대상 집계)
-function renderCarAnalysis(year) {
-  const box = document.getElementById('carAnalysisInner');
+// v19.23.0: CAR 분석 (심각도 class · 영역 2축) — v19.27.7: scope(지점/실본부/외주)별 집계·렌더 분리
+function renderCarAnalysis(year, scope) {
+  const boxId = scope === 'division' ? 'divCarAnalysisInner' : (scope === 'outsourcing' ? 'outCarAnalysisInner' : 'carAnalysisInner');
+  const box = document.getElementById(boxId);
   if (!box) return;
-  const items = collectCarItems(year);
-  const titleH = `<h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">CAR 분석 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년 · 발견사항 ${items.length}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">개선조치요구서를 심각도·영역 기준으로 집계합니다 (전 심사대상)</p>`;
+  const scopeLbl = scope === 'division' ? '실/본부' : scope === 'outsourcing' ? '외주협력업체' : scope === 'branch' ? '지점' : '전 심사대상';
+  const items = collectCarItems(year).filter(it => !scope || it.targetType === scope);
+  const titleH = `<h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">CAR 분석 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년 · 발견사항 ${items.length}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">개선조치요구서를 심각도·영역 기준으로 집계합니다 (${scopeLbl})</p>`;
   if (!items.length) {
     box.innerHTML = `<div class="apple-card p-6">${titleH}<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:24px;">${year}년 입력된 CAR 발견사항이 없습니다. 상세 페이지의 개선조치요구서 현황에서 항목을 입력하세요.</div></div>`;
     return;
@@ -8821,104 +8823,166 @@ function switchAnalysisSubTab(tab) {
   renderAnalysis();
 }
 
+// v19.27.7: 실/본부 분석 — 지점 분석과 동일한 '요약 카드 → 클릭 시 디테일' 패턴으로 재구성
 function renderDivisionAnalysis() {
   const year = parseInt(document.getElementById('analysisYear')?.value || new Date().getFullYear());
   const divData = allData.filter(d => d.auditCategory === 'division');
   const yearData = divData.filter(d => d.year == year);
 
   let html = '';
-
   html += `<div class="flex items-center gap-3 mb-4">`;
   html += `<span style="font-size:13px;color:#9EA2A1;">${year}년 · 실/본부 심사 분석</span>`;
   html += `</div>`;
 
   if (yearData.length === 0) {
     html += `<div class="apple-card" style="padding:40px;text-align:center;"><div style="font-size:15px;color:#9EA2A1;">${year}년 실/본부 심사 데이터가 없습니다</div></div>`;
-  } else {
-    // Trend chart
-    html += `<div class="apple-card mb-4" style="padding:20px;">`;
-    html += `<div style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:12px;">부서별 적합률 트렌드</div>`;
-    html += `<canvas id="divTrendChart" height="200"></canvas>`;
-    html += `</div>`;
-
-    // Risk chart
-    html += `<div class="apple-card mb-4" style="padding:20px;">`;
-    html += `<div style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:12px;">부서별 부적합 분석</div>`;
-    html += `<canvas id="divRiskChart" height="200"></canvas>`;
-    html += `</div>`;
-
-    // Card-based comparison (품질/안전/FSDS per division)
-    html += `<div class="apple-card mb-4" style="padding:20px;">`;
-    html += `<div style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:16px;">부서별 품질심사 · 안전감사 · FSDS 비교</div>`;
-
-    const divGroups = {};
-    yearData.forEach(d => {
-      const div = d.division || d.station;
-      if (!divGroups[div]) divGroups[div] = {};
-      const result = calculateBinaryScores(d.scores, getChecklist(d.type));
-      if (d.type.startsWith('qa_')) divGroups[div].qa = result;
-      else if (d.type.includes('safety')) divGroups[div].safety = result;
-      else if (d.type === 'fsds') divGroups[div].fsds = result;
-    });
-
-    let aIdx = 0;
-    for (const [div, results] of Object.entries(divGroups)) {
-      const aDetailId = `divAnalDetail_${aIdx}`;
-      html += `<div style="margin-bottom:12px;border:1px solid rgba(192,206,209,0.3);border-radius:12px;overflow:hidden;">`;
-      html += `<div style="padding:14px;cursor:pointer;background:#fff;" onclick="document.getElementById('${aDetailId}').classList.toggle('hidden');this.querySelector('svg').style.transform=document.getElementById('${aDetailId}').classList.contains('hidden')?'':'rotate(180deg)'">`;
-      html += `<div class="flex justify-between items-center">`;
-      html += `<span style="font-size:14px;font-weight:600;color:#303A3C;">${div}</span>`;
-      html += `<svg class="w-4 h-4" style="color:#9EA2A1;transition:transform 0.2s;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>`;
-      html += `</div>`;
-      // Mini badges
-      html += `<div class="flex gap-3 mt-2">`;
-      for (const [key, label] of [['qa','품질심사'],['safety','안전감사'],['fsds','FSDS']]) {
-        const r = results[key];
-        if (r) {
-          const c = r.complianceRate >= 90 ? '#22C55E' : r.complianceRate >= 70 ? '#F59E0B' : '#D20015';
-          html += `<div style="flex:1;text-align:center;padding:6px;background:${c}10;border-radius:8px;">`;
-          html += `<div style="font-size:16px;font-weight:600;color:${c};">${r.complianceRate.toFixed(0)}%</div>`;
-          html += `<div style="font-size:10px;color:#9EA2A1;">${label}</div>`;
-          html += `</div>`;
-        } else {
-          html += `<div style="flex:1;text-align:center;padding:6px;background:#f9f9fb;border-radius:8px;">`;
-          html += `<div style="font-size:16px;color:#C0CED1;">-</div>`;
-          html += `<div style="font-size:10px;color:#C0CED1;">${label}</div>`;
-          html += `</div>`;
-        }
-      }
-      html += `</div></div>`;
-      // Detail (hidden)
-      html += `<div id="${aDetailId}" class="hidden" style="padding:14px;background:#f9f9fb;border-top:1px solid rgba(192,206,209,0.2);">`;
-      for (const [key, label] of [['qa','품질심사'],['safety','안전감사'],['fsds','FSDS']]) {
-        const r = results[key];
-        if (!r) continue;
-        html += `<div style="font-size:13px;font-weight:600;color:#303A3C;margin-bottom:6px;">${label} — S:${r.yesCount} U:${r.noCount} NA:${r.naCount}</div>`;
-        for (const [catName, catRes] of Object.entries(r.categoryResults)) {
-          const catRate = catRes.complianceRate;
-          const catColor = catRate >= 90 ? '#22C55E' : catRate >= 70 ? '#F59E0B' : '#D20015';
-          html += `<div class="flex items-center gap-2" style="margin-left:8px;margin-bottom:3px;">`;
-          html += `<div style="flex:1;font-size:12px;color:#565A5B;word-break:keep-all;">${catName}</div>`;
-          html += `<div style="width:50px;height:3px;background:#f0f0f0;border-radius:2px;flex-shrink:0;"><div style="height:3px;width:${catRate.toFixed(0)}%;background:${catColor};border-radius:2px;"></div></div>`;
-          html += `<span style="font-size:11px;color:${catColor};min-width:32px;text-align:right;">${catRate.toFixed(0)}%</span>`;
-          html += `</div>`;
-        }
-        html += `<div style="margin-bottom:10px;"></div>`;
-      }
-      html += `</div></div>`;
-      aIdx++;
-    }
-    html += `</div>`;
+    document.getElementById('divisionAnalysisContent').innerHTML = html;
+    return;
   }
+
+  // 집계 — 부서별 점검표 결과 + 부적합 U 총계 + 평균 적합률
+  const divGroups = {};
+  let totalU = 0, rSum = 0, rN = 0;
+  yearData.forEach(d => {
+    const div = d.division || d.station;
+    if (!divGroups[div]) divGroups[div] = {};
+    const result = calculateBinaryScores(d.scores, getChecklist(d.type));
+    totalU += result.noCount;
+    if (result.totalApplicable) { rSum += result.complianceRate; rN++; }
+    if (d.type.startsWith('qa_')) divGroups[div].qa = result;
+    else if (d.type.includes('safety')) divGroups[div].safety = result;
+    else if (d.type === 'fsds') divGroups[div].fsds = result;
+  });
+  const avgRate = rN ? (rSum / rN) : null;
+  const divCarCount = (typeof collectCarItems === 'function') ? collectCarItems(year).filter(it => it.targetType === 'division').length : 0;
+
+  const dCard = (title, sub, num, unit, color, detailId) =>
+    `<div class="apple-card" style="padding:20px;cursor:pointer;transition:all 0.15s ease;" onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'" onmouseout="this.style.boxShadow='none'" onclick="toggleDivAnalysisDetail('${detailId}')">`
+    + `<div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">${title}</div>`
+    + `<div style="font-size:13px;color:#303A3C;margin-bottom:8px;">${sub}</div>`
+    + `<div><span style="font-size:24px;font-weight:600;color:${color};">${num}</span><span style="font-size:12px;color:#9EA2A1;margin-left:4px;">${unit}</span></div>`
+    + `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div></div>`;
+
+  html += `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">`
+    + dCard('CAR 분석', '개선조치요구서 집계', divCarCount, '발견사항', '#D20015', 'divDetailCar')
+    + dCard('부적합(U) 항목', '점검표·영역별 부적합', totalU, '건', '#F59E0B', 'divDetailNci')
+    + dCard('점검표별 적합률', '부서별 품질·안전·FSDS', Object.keys(divGroups).length, '개 부서' + (avgRate != null ? ' · 평균 ' + avgRate.toFixed(1) + '%' : ''), '#0067C4', 'divDetailRate')
+    + `</div>`;
+
+  // 디테일 영역 (hidden, 펼칠 때 렌더)
+  html += `<div id="divDetailCar" class="hidden mb-4 fade-in"><div id="divCarAnalysisInner"></div></div>`;
+  html += `<div id="divDetailNci" class="hidden mb-4 fade-in"><div id="divNciInner"></div></div>`;
+  html += `<div id="divDetailRate" class="hidden mb-4 fade-in"><div id="divRateInner"></div></div>`;
 
   document.getElementById('divisionAnalysisContent').innerHTML = html;
+  window._divAnalysisData = { year, divData, yearData, divGroups };
+}
 
-  if (yearData.length > 0) {
-    setTimeout(() => {
-      renderDivisionTrendChart(divData, year);
-      renderDivisionRiskChart(yearData);
-    }, 100);
+// v19.27.7: 실/본부 분석 디테일 토글 (지점 toggleAnalysisDetail의 실본부판)
+function toggleDivAnalysisDetail(id) {
+  ['divDetailCar', 'divDetailNci', 'divDetailRate'].forEach(d => { if (d !== id) document.getElementById(d)?.classList.add('hidden'); });
+  const el = document.getElementById(id);
+  if (!el) return;
+  const wasHidden = el.classList.contains('hidden');
+  el.classList.toggle('hidden');
+  if (wasHidden) {
+    if (!el.querySelector('.detail-close-btn')) {
+      const b = document.createElement('div');
+      b.className = 'detail-close-btn';
+      b.innerHTML = `<button onclick="document.getElementById('${id}').classList.add('hidden')" class="pill-btn pill-btn-outline" style="font-size:12px;padding:4px 14px;margin-bottom:12px;">&#10005; 닫기</button>`;
+      el.insertBefore(b, el.firstChild);
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const data = window._divAnalysisData;
+    if (!data) return;
+    if (id === 'divDetailCar') renderCarAnalysis(data.year, 'division');
+    else if (id === 'divDetailNci') renderDivNciDetail(data);
+    else if (id === 'divDetailRate') renderDivRateDetail(data);
   }
+}
+
+// v19.27.7: 실/본부 부적합(U) 항목 디테일 — 부서·점검표별 U 항목 목록 + 부적합 차트
+function renderDivNciDetail(data) {
+  const box = document.getElementById('divNciInner');
+  if (!box) return;
+  const { yearData, year } = data;
+  const typeLbl = (t) => { const r = CHECKLIST_REGISTRY[t]; return r ? r.name.replace('품질심사', '품질').replace('안전감사', '안전').replace('비행안전문서시스템', 'FSDS') : t; };
+  const byDiv = {};
+  let total = 0;
+  yearData.forEach(d => {
+    const div = d.division || d.station;
+    const cl = getChecklist(d.type);
+    const us = [];
+    for (const [cat, cd] of Object.entries(cl)) {
+      (cd.items || []).forEach(it => {
+        const v = d.scores ? d.scores[it.id] : null;
+        if (v === 'U' || v === 'NO' || v === 'N') us.push({ cat, id: it.id, text: it.text || '', type: d.type });
+      });
+    }
+    if (us.length) { (byDiv[div] = byDiv[div] || []).push(...us); total += us.length; }
+  });
+  let html = `<div class="apple-card p-6"><h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">부적합(U) 항목 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년 · ${total}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">실/본부 점검표에서 부적합(U)으로 평가된 항목입니다</p>`;
+  html += `<div style="margin-bottom:16px;"><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">부서별 부적합 건수</div><div style="position:relative;height:220px;"><canvas id="divRiskChart"></canvas></div></div>`;
+  if (!total) {
+    html += `<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:24px;">부적합(U) 항목이 없습니다.</div>`;
+  } else {
+    Object.keys(byDiv).forEach(div => {
+      html += `<div style="font-size:14px;font-weight:600;color:#303A3C;margin:14px 0 6px;">${_esc(div)} <span style="font-size:12px;color:#F59E0B;font-weight:500;">${byDiv[div].length}건</span></div>`;
+      byDiv[div].forEach(u => {
+        html += `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid rgba(192,206,209,0.25);">`
+          + `<span style="flex-shrink:0;font-size:11px;font-weight:600;color:#0067C4;min-width:48px;">${_esc(typeLbl(u.type))}</span>`
+          + `<span style="flex-shrink:0;font-size:11px;color:#9EA2A1;">${_esc(u.id)}</span>`
+          + `<span style="font-size:13px;color:#303A3C;flex:1;min-width:0;">${_esc(u.text)}</span></div>`;
+      });
+    });
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+  setTimeout(() => { if (typeof renderDivisionRiskChart === 'function') renderDivisionRiskChart(yearData); }, 50);
+}
+
+// v19.27.7: 실/본부 점검표별 적합률 디테일 — 부서별 품질·안전·FSDS 비교(접이식) + 트렌드 차트
+function renderDivRateDetail(data) {
+  const box = document.getElementById('divRateInner');
+  if (!box) return;
+  const { divData, divGroups, year } = data;
+  let html = `<div class="apple-card p-6"><h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">점검표별 적합률 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">부서별 품질심사·안전감사·FSDS 적합률 (부서 클릭 시 카테고리 상세)</p>`;
+  html += `<div style="margin-bottom:16px;"><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">부서별 적합률 트렌드</div><div style="position:relative;height:220px;"><canvas id="divTrendChart"></canvas></div></div>`;
+  let aIdx = 0;
+  for (const [div, results] of Object.entries(divGroups)) {
+    const aDetailId = `divAnalDetail_${aIdx}`;
+    html += `<div style="margin-bottom:12px;border:1px solid rgba(192,206,209,0.3);border-radius:12px;overflow:hidden;">`;
+    html += `<div style="padding:14px;cursor:pointer;background:#fff;" onclick="document.getElementById('${aDetailId}').classList.toggle('hidden');this.querySelector('svg').style.transform=document.getElementById('${aDetailId}').classList.contains('hidden')?'':'rotate(180deg)'">`;
+    html += `<div class="flex justify-between items-center"><span style="font-size:14px;font-weight:600;color:#303A3C;">${div}</span><svg class="w-4 h-4" style="color:#9EA2A1;transition:transform 0.2s;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div>`;
+    html += `<div class="flex gap-3 mt-2">`;
+    for (const [key, label] of [['qa', '품질심사'], ['safety', '안전감사'], ['fsds', 'FSDS']]) {
+      const r = results[key];
+      if (r) {
+        const c = r.complianceRate >= 90 ? '#22C55E' : r.complianceRate >= 70 ? '#F59E0B' : '#D20015';
+        html += `<div style="flex:1;text-align:center;padding:6px;background:${c}10;border-radius:8px;"><div style="font-size:16px;font-weight:600;color:${c};">${r.complianceRate.toFixed(0)}%</div><div style="font-size:10px;color:#9EA2A1;">${label}</div></div>`;
+      } else {
+        html += `<div style="flex:1;text-align:center;padding:6px;background:#f9f9fb;border-radius:8px;"><div style="font-size:16px;color:#C0CED1;">-</div><div style="font-size:10px;color:#C0CED1;">${label}</div></div>`;
+      }
+    }
+    html += `</div></div>`;
+    html += `<div id="${aDetailId}" class="hidden" style="padding:14px;background:#f9f9fb;border-top:1px solid rgba(192,206,209,0.2);">`;
+    for (const [key, label] of [['qa', '품질심사'], ['safety', '안전감사'], ['fsds', 'FSDS']]) {
+      const r = results[key];
+      if (!r) continue;
+      html += `<div style="font-size:13px;font-weight:600;color:#303A3C;margin-bottom:6px;">${label} — S:${r.yesCount} U:${r.noCount} NA:${r.naCount}</div>`;
+      for (const [catName, catRes] of Object.entries(r.categoryResults)) {
+        const catRate = catRes.complianceRate;
+        const catColor = catRate >= 90 ? '#22C55E' : catRate >= 70 ? '#F59E0B' : '#D20015';
+        html += `<div class="flex items-center gap-2" style="margin-left:8px;margin-bottom:3px;"><div style="flex:1;font-size:12px;color:#565A5B;word-break:keep-all;">${catName}</div><div style="width:50px;height:3px;background:#f0f0f0;border-radius:2px;flex-shrink:0;"><div style="height:3px;width:${catRate.toFixed(0)}%;background:${catColor};border-radius:2px;"></div></div><span style="font-size:11px;color:${catColor};min-width:32px;text-align:right;">${catRate.toFixed(0)}%</span></div>`;
+      }
+      html += `<div style="margin-bottom:10px;"></div>`;
+    }
+    html += `</div></div>`;
+    aIdx++;
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+  setTimeout(() => { if (typeof renderDivisionTrendChart === 'function') renderDivisionTrendChart(divData, year); }, 50);
 }
 
 // ============================================================================
@@ -9205,7 +9269,7 @@ function toggleAnalysisDetail(id) {
     else if (id === 'analysisDetail8') renderPriorityChart(data);
     else if (id === 'analysisDetail9') renderRegionalRadarChart(data);
     else if (id === 'analysisDetailVoc') renderVocCompareChart(data);
-    else if (id === 'analysisDetailCar') renderCarAnalysis(data.year);
+    else if (id === 'analysisDetailCar') renderCarAnalysis(data.year, 'branch');
   }
 }
 
@@ -16857,7 +16921,7 @@ Object.assign(window, {
   populateStationDropdown, populateViewStationDropdown,
   populateInputTargetDropdown, populateViewTargetDropdown,
   setInputPhase, setViewPhase,
-  renderDivisionStats, renderDivisionAnalysis,
+  renderDivisionStats, renderDivisionAnalysis, toggleDivAnalysisDetail, renderDivNciDetail, renderDivRateDetail,
   renderOutsourcingStats, renderAuditorStats, renderOutsourcingAnalysis, toggleSection,
   // Utility exposed
   Scoring, ChartUtil, SafeStorage, CONFIG,
