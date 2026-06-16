@@ -1721,7 +1721,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.27.9',
+  version: '19.27.10',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7058,6 +7058,9 @@ function renderOverviewStats() {
         const cc = {}; CAR_CLASSES.forEach(c => cc[c.key] = 0);
         carItems.forEach(it => cc[it.cls] = (cc[it.cls] || 0) + 1);
         const badges = CAR_CLASSES.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 12px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${cc[c.key] || 0}</span>`).join('');
+        // v19.27.10: 대상 유형별(지점·실/본부·외주) 건수 칩
+        const tc = {}; carItems.forEach(it => tc[it.targetType] = (tc[it.targetType] || 0) + 1);
+        const typeChips = [['branch', '지점'], ['division', '실/본부'], ['outsourcing', '외주']].filter(([k]) => tc[k]).map(([k, lbl]) => `<span style="display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:5px 11px;border-radius:980px;background:rgba(89,90,91,0.08);color:#565A5B;">${lbl} ${tc[k]}건</span>`).join('');
         const tt = (typ) => typ === 'division' ? '실·본부' : typ === 'outsourcing' ? '외주' : '지점';
         const rows = carItems.slice().sort((a, b) => (monthOf[a.station] || 99) - (monthOf[b.station] || 99)).map(it => {
           const cm = carClassMeta(it.cls);
@@ -7076,6 +7079,7 @@ function renderOverviewStats() {
           + `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;cursor:pointer;" onclick="toggleSection('ovCarBody')">`
           + `<span style="font-size:15px;font-weight:600;color:#303A3C;">개선조치요구서</span>`
           + `<span style="font-size:12px;color:#9EA2A1;">${periodLbl} ${carItems.length}건</span>`
+          + typeChips
           + `<span style="flex:1;"></span>${badges}`
           + `<span id="ovCarBodyArrow" style="color:#9EA2A1;font-size:14px;margin-left:4px;">&#9656;</span></div>`
           + `<div id="ovCarBody" class="hidden" style="margin-top:14px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;">`
