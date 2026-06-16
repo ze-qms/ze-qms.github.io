@@ -1721,7 +1721,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.27.7',
+  version: '19.27.8',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8761,14 +8761,17 @@ function renderCarAnalysis(year, scope) {
   items.forEach(it => { const a = it.category || '(미분류)'; areaCount[a] = (areaCount[a] || 0) + 1; });
   const areas = Object.keys(areaCount).sort((a, b) => areaCount[b] - areaCount[a]);
   const class1Items = items.filter(it => it.cls === 'class1');
+  // v19.27.8: canvas id를 scope별로 분리 (지점·실본부 CAR이 같은 id를 쓰면 충돌)
+  const cid = scope === 'division' ? 'divCar' : (scope === 'outsourcing' ? 'outCar' : 'car');
+  const doughId = cid + 'ClassDoughnut', areaId = cid + 'AreaBar';
 
   let html = `<div class="apple-card p-6">${titleH}`;
   html += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">` + CAR_CLASSES.map(c =>
     `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 12px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${clsCount[c.key] || 0}</span>`
   ).join('') + `</div>`;
   html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">`
-    + `<div><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">심각도 분포</div><div style="position:relative;height:240px;"><canvas id="carClassDoughnut"></canvas></div></div>`
-    + `<div><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">영역별 건수</div><div style="position:relative;height:240px;"><canvas id="carAreaBar"></canvas></div></div>`
+    + `<div><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">심각도 분포</div><div style="position:relative;height:240px;"><canvas id="${doughId}"></canvas></div></div>`
+    + `<div><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">영역별 건수</div><div style="position:relative;height:240px;"><canvas id="${areaId}"></canvas></div></div>`
     + `</div>`;
   html += `<div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">영역 × 심각도</div>`;
   html += `<div style="overflow-x:auto;margin-bottom:16px;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;"><th style="text-align:left;padding:8px 6px;color:#565A5B;">영역</th>`
@@ -8792,17 +8795,17 @@ function renderCarAnalysis(year, scope) {
   html += `</div>`;
   box.innerHTML = html;
 
-  ChartUtil.destroy('carClassDoughnut');
-  const dctx = document.getElementById('carClassDoughnut');
-  if (dctx) chartInstances['carClassDoughnut'] = new Chart(dctx, {
+  ChartUtil.destroy(doughId);
+  const dctx = document.getElementById(doughId);
+  if (dctx) chartInstances[doughId] = new Chart(dctx, {
     type: 'doughnut',
     data: { labels: CAR_CLASSES.map(c => c.label), datasets: [{ data: CAR_CLASSES.map(c => clsCount[c.key] || 0), backgroundColor: CAR_CLASSES.map(c => c.color), borderWidth: 0 }] },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 12, padding: 10 } }, datalabels: { display: (c) => c.dataset.data[c.dataIndex] > 0, color: '#fff', font: { size: 13, weight: '700' }, formatter: (v) => v || '' } } },
     plugins: [ChartDataLabels]
   });
-  ChartUtil.destroy('carAreaBar');
-  const bctx = document.getElementById('carAreaBar');
-  if (bctx) chartInstances['carAreaBar'] = new Chart(bctx, {
+  ChartUtil.destroy(areaId);
+  const bctx = document.getElementById(areaId);
+  if (bctx) chartInstances[areaId] = new Chart(bctx, {
     type: 'bar',
     data: { labels: areas, datasets: [{ data: areas.map(a => areaCount[a]), backgroundColor: '#D20015', borderRadius: 3, barPercentage: 0.8 }] },
     options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } }, scales: { x: { beginAtZero: true, max: Math.max(...areas.map(a => areaCount[a]), 0) + 1, ticks: { stepSize: 1, font: { size: 11 } } }, y: { grid: { display: false }, ticks: { font: { size: 11 }, autoSkip: false } } }, plugins: { legend: { display: false }, datalabels: { display: true, anchor: 'end', align: 'right', offset: 4, color: '#1a1c1d', font: { size: 12, weight: '700' }, formatter: (v) => v || '' } } },
@@ -9210,7 +9213,7 @@ function renderDivisionTrendChart(allDivData, currentYear) {
   chartInstances['divTrendChart'] = new Chart(ctx, {
     type: 'line',
     data: { labels: years.map(y => y + '년'), datasets },
-    options: { responsive: true, scales: { y: { min: 0, max: 100, title: { display: true, text: '적합률 (%)' } } }, plugins: { legend: { position: 'bottom' } } }
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, title: { display: true, text: '적합률 (%)' } } }, plugins: { legend: { position: 'bottom' } } }
   });
 }
 
@@ -9235,7 +9238,7 @@ function renderDivisionRiskChart(yearData) {
       labels: sorted.map(s => s[0]),
       datasets: [{ label: '부적합(U) 건수', data: sorted.map(s => s[1]), backgroundColor: '#D2001540', borderColor: '#D20015', borderWidth: 1 }]
     },
-    options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } }
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
   });
 }
 
