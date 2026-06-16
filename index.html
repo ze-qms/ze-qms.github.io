@@ -1721,7 +1721,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.27.5',
+  version: '19.27.6',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7039,18 +7039,24 @@ function renderOverviewStats() {
 
     // v19.23.2: 개선조치요구서 — 펼침형 카드 (헤더=분류 집계, 본문=발행 CAR 리스트)
     try {
-      const carItems = collectCarItems(year);
+      // 대상명 → 심사월 (가장 이른 심사 시작월) — 기간 필터·정렬 공용
+      const monthOf = {};
+      allData.filter(d => d.year == year).forEach(d => {
+        const name = (d.auditCategory === 'division') ? (d.division || d.station) : d.station;
+        const dt = d.auditDateStart || d.auditDate || '';
+        const m = dt.length >= 7 ? parseInt(dt.slice(5, 7)) : null;
+        if (name && m) { if (!monthOf[name] || m < monthOf[name]) monthOf[name] = m; }
+      });
+      // v19.27.6: 개선조치요구서도 선택 기간(분기/월)으로 필터 — 대상 심사월 기준
+      const carItems = collectCarItems(year).filter(it => {
+        if (statsPeriod.mode === 'year') return true;
+        const m = monthOf[it.station];
+        if (!m) return false; // 심사월 미상은 분기/월 집계서 제외
+        return statsPeriod.mode === 'quarter' ? Math.ceil(m / 3) === statsPeriod.quarter : m === statsPeriod.month;
+      });
       if (carItems.length) {
         const cc = {}; CAR_CLASSES.forEach(c => cc[c.key] = 0);
         carItems.forEach(it => cc[it.cls] = (cc[it.cls] || 0) + 1);
-        // 대상명 → 심사월 (가장 이른 심사 시작월)
-        const monthOf = {};
-        allData.filter(d => d.year == year).forEach(d => {
-          const name = (d.auditCategory === 'division') ? (d.division || d.station) : d.station;
-          const dt = d.auditDateStart || d.auditDate || '';
-          const m = dt.length >= 7 ? parseInt(dt.slice(5, 7)) : null;
-          if (name && m) { if (!monthOf[name] || m < monthOf[name]) monthOf[name] = m; }
-        });
         const badges = CAR_CLASSES.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 12px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${cc[c.key] || 0}</span>`).join('');
         const tt = (typ) => typ === 'division' ? '실·본부' : typ === 'outsourcing' ? '외주' : '지점';
         const rows = carItems.slice().sort((a, b) => (monthOf[a.station] || 99) - (monthOf[b.station] || 99)).map(it => {
@@ -7069,7 +7075,7 @@ function renderOverviewStats() {
         html += `<div class="apple-card p-6 mb-6">`
           + `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;cursor:pointer;" onclick="toggleSection('ovCarBody')">`
           + `<span style="font-size:15px;font-weight:600;color:#303A3C;">개선조치요구서</span>`
-          + `<span style="font-size:12px;color:#9EA2A1;">${year}년 ${carItems.length}건</span>`
+          + `<span style="font-size:12px;color:#9EA2A1;">${periodLbl} ${carItems.length}건</span>`
           + `<span style="flex:1;"></span>${badges}`
           + `<span id="ovCarBodyArrow" style="color:#9EA2A1;font-size:14px;margin-left:4px;">&#9656;</span></div>`
           + `<div id="ovCarBody" class="hidden" style="margin-top:14px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;">`
@@ -12336,7 +12342,7 @@ function renderViewRecentStations() {
       const vals = [s.types.branch, s.types.pax, s.types.ramp].filter(v => v != null);
       const totalAvg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
       html += `<tr style="cursor:pointer;" onclick="document.getElementById('viewTarget').value='${s.station}';if(document.getElementById('viewTarget')._comboRefresh)document.getElementById('viewTarget')._comboRefresh();document.getElementById('viewType').value='전체';document.getElementById('viewRegion').value='전체';viewSearch()">`;
-      html += `<td data-label="지점" style="font-weight:600;">${s.station}<div style="font-size:10px;color:#9EA2A1;">${s.region}</div></td>`;
+      html += `<td data-label="지점" style="font-weight:600;">${stationLink(year, s.station)}<div style="font-size:10px;color:#9EA2A1;">${s.region}</div></td>`;
       html += `<td style="text-align:center;">${totalAvg != null ? '<span class="badge-pill" style="' + avgBadgeStyle(totalAvg) + ';font-weight:700;">' + totalAvg.toFixed(2) + '</span>' : '<span style="color:#C0CED1;">-</span>'}</td>`;
       html += `<td style="text-align:center;">${s.types.branch ? '<span class="badge-pill" style="' + avgBadgeStyle(s.types.branch) + '">' + s.types.branch.toFixed(2) + '</span>' : '<span style="color:#C0CED1;">-</span>'}</td>`;
       html += `<td style="text-align:center;">${s.types.pax ? '<span class="badge-pill" style="' + avgBadgeStyle(s.types.pax) + '">' + s.types.pax.toFixed(2) + '</span>' : '<span style="color:#C0CED1;">-</span>'}</td>`;
