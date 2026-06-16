@@ -1721,7 +1721,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.27.10',
+  version: '19.27.11',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7075,6 +7075,29 @@ function renderOverviewStats() {
             + `<td style="padding:8px 6px;text-align:center;">${rb}</td>`
             + `</tr>`;
         }).join('');
+        // v19.27.11: 유형별(지점/실·본부/외주) 요약 — Class·Concern 건수 + 위험도 분포
+        const RISK_LV = [['red', '높음'], ['orange', '상당'], ['yellow', '중간'], ['green', '낮음']];
+        const summaryTypeRows = [['branch', '지점'], ['division', '실/본부'], ['outsourcing', '외주']]
+          .filter(([k]) => carItems.some(it => it.targetType === k))
+          .map(([k, lbl]) => {
+            const its = carItems.filter(it => it.targetType === k);
+            const rd = { red: 0, orange: 0, yellow: 0, green: 0 };
+            its.forEach(it => { const m = riskMeta(it.risk); if (m) { const lv = RISK_MATRIX[m.code]; if (lv) rd[lv]++; } });
+            const dots = RISK_LV.filter(([lv]) => rd[lv]).map(([lv, nm]) => `<span title="${nm}" style="display:inline-flex;align-items:center;gap:3px;margin-right:12px;white-space:nowrap;"><span style="width:9px;height:9px;border-radius:50%;background:${RISK_COLORS[lv]};display:inline-block;"></span><span style="font-size:12px;color:#565A5B;">${rd[lv]}</span></span>`).join('') || '<span style="color:#C0CED1;">-</span>';
+            return `<tr style="border-bottom:1px solid rgba(192,206,209,0.25);">`
+              + `<td style="padding:7px 6px;font-weight:600;color:#303A3C;">${lbl}</td>`
+              + CAR_CLASSES.map(c => `<td style="text-align:center;padding:7px 6px;color:${c.color};font-weight:600;">${its.filter(it => it.cls === c.key).length || '<span style=\'color:#C0CED1;font-weight:400;\'>0</span>'}</td>`).join('')
+              + `<td style="text-align:center;padding:7px 6px;font-weight:700;">${its.length}</td>`
+              + `<td style="padding:7px 6px;">${dots}</td>`
+              + `</tr>`;
+          }).join('');
+        const summaryHtml = `<div style="font-size:13px;font-weight:600;color:#565A5B;margin-bottom:8px;">유형별 요약</div>`
+          + `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;"><thead><tr style="border-bottom:1px solid #C0CED1;">`
+          + `<th style="text-align:left;padding:8px 6px;color:#565A5B;">유형</th>`
+          + CAR_CLASSES.map(c => `<th style="padding:8px 6px;color:${c.color};">${c.label}</th>`).join('')
+          + `<th style="padding:8px 6px;color:#565A5B;">합계</th>`
+          + `<th style="text-align:left;padding:8px 6px;color:#565A5B;">위험도 분포</th>`
+          + `</tr></thead><tbody>${summaryTypeRows}</tbody></table>`;
         html += `<div class="apple-card p-6 mb-6">`
           + `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;cursor:pointer;" onclick="toggleSection('ovCarBody')">`
           + `<span style="font-size:15px;font-weight:600;color:#303A3C;">개선조치요구서</span>`
@@ -7082,7 +7105,7 @@ function renderOverviewStats() {
           + typeChips
           + `<span style="flex:1;"></span>${badges}`
           + `<span id="ovCarBodyArrow" style="color:#9EA2A1;font-size:14px;margin-left:4px;">&#9656;</span></div>`
-          + `<div id="ovCarBody" class="hidden" style="margin-top:14px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;">`
+          + `<div id="ovCarBody" class="hidden" style="margin-top:14px;overflow-x:auto;">${summaryHtml}<div style="font-size:13px;font-weight:600;color:#565A5B;margin-bottom:8px;">상세 내역</div><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid #C0CED1;">`
           + `<th style="text-align:left;padding:8px 6px;color:#565A5B;">심사대상</th><th style="padding:8px 6px;color:#565A5B;">심사월</th><th style="padding:8px 6px;color:#565A5B;">분류</th><th style="text-align:left;padding:8px 6px;color:#565A5B;">CAR 제목</th><th style="padding:8px 6px;color:#565A5B;">위험도</th>`
           + `</tr></thead><tbody>${rows}</tbody></table></div></div>`;
       }
