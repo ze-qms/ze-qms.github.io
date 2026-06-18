@@ -1721,7 +1721,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.27.11',
+  version: '19.28.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -5112,10 +5112,13 @@ function renderTypeStatusCards() {
     const company = (!isBinary && t.key !== 'branch') ? (HANDLING_COMPANIES[t.key]?.[selectedStation] || '') : undefined;
     const record = findRecord(selectedYear, selectedStation, t.key, company || undefined);
     const hasData = !!record;
-    const statusText = hasData ? '완료' : '미작성';
-    const statusStyle = hasData
-      ? 'background:rgba(34,197,94,0.15);color:#22C55E'
-      : 'background:rgba(158,162,161,0.15);color:#9EA2A1';
+    // v19.28.0: 부분 저장은 '작성 중'(앰버)으로 구분
+    const isPartial = hasData && record.partial;
+    const statusText = !hasData ? '미작성' : (isPartial ? '작성 중' : '완료');
+    const statusStyle = !hasData
+      ? 'background:rgba(158,162,161,0.15);color:#9EA2A1'
+      : (isPartial ? 'background:rgba(245,158,11,0.18);color:#B45309'
+                   : 'background:rgba(34,197,94,0.15);color:#22C55E');
     let avg, avgColor;
     if (hasData) {
       if (isBinary) {
@@ -5179,11 +5182,15 @@ function inputShowTypes() {
     const company = t.key !== 'branch' ? (HANDLING_COMPANIES[t.key]?.[selectedStation] || '') : undefined;
     const record = findRecord(selectedYear, selectedStation, t.key, company || undefined);
     const hasData = !!record;
-    const statusBadge = hasData
-      ? '<span class="badge-pill" style="background:rgba(34,197,94,0.15);color:#22C55E;">완료</span>'
-      : '<span class="badge-pill" style="background:rgba(158,162,161,0.15);color:#9EA2A1;">미작성</span>';
+    // v19.28.0: 부분 저장은 '작성 중'(앰버)으로 구분 + '이어서 작성' 안내
+    const isPartial = hasData && record.partial;
+    const statusBadge = !hasData
+      ? '<span class="badge-pill" style="background:rgba(158,162,161,0.15);color:#9EA2A1;">미작성</span>'
+      : (isPartial
+        ? '<span class="badge-pill" style="background:rgba(245,158,11,0.18);color:#B45309;">작성 중</span>'
+        : '<span class="badge-pill" style="background:rgba(34,197,94,0.15);color:#22C55E;">완료</span>');
     const companyInfo = company ? `<div style="font-size:12px;color:#9EA2A1;margin-top:4px;">협력사: ${company}</div>` : '';
-    const actionText = hasData ? '수정하기' : '작성하기';
+    const actionText = !hasData ? '작성하기' : (isPartial ? '이어서 작성' : '수정하기');
 
     html += `<div class="apple-card" style="padding:20px;cursor:pointer;transition:all 0.15s ease;"
       onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'"
@@ -5650,18 +5657,14 @@ function saveAssessment() {
       }
     }
   }
-  if (missingItems.length > 0) {
-    showToast(`미입력 항목이 ${missingItems.length}건 있습니다. 해당 항목으로 이동합니다.`, 'warning');
-    // v19.24.0: 첫 미입력 항목으로 스크롤 + 잠깐 강조
-    const el = document.querySelector(`[data-item-id="${missingItems[0]}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.style.background = 'rgba(210,0,21,0.06)';
-      el.style.boxShadow = 'inset 0 0 0 2px #D20015';
-      setTimeout(() => { el.style.background = ''; el.style.boxShadow = ''; }, 2000);
-    }
+  // v19.28.0: 부분 저장 허용 — 미입력 항목이 있어도 입력된 내용은 저장(현장 임시저장).
+  // 단 1건도 입력 안 했으면 저장 의미가 없으므로 차단.
+  const enteredCount = totalItems - missingItems.length;
+  if (enteredCount === 0) {
+    showToast('입력된 항목이 없습니다. 1개 이상 입력 후 저장해주세요.', 'warning');
     return;
   }
+  const isPartial = missingItems.length > 0; // 작성 중(미완료) 여부
 
   const existIdx = allData.findIndex(d =>
     d.year == year && d.station === station && d.type === type &&
@@ -5678,6 +5681,8 @@ function saveAssessment() {
   };
   if (company) record.company = company;
   if (selectedAuditCategory === 'division') record.division = selectedDivision;
+  // v19.28.0: 부분 저장이면 '작성 중' 표시. 전 항목 입력 시 partial 플래그 제거(이어쓰기 후 완료 처리)
+  if (isPartial) record.partial = true; else delete record.partial;
 
   if (existIdx >= 0) {
     allData[existIdx] = record;
@@ -5700,7 +5705,9 @@ function saveAssessment() {
     saveSchedule();
   }
 
-  showToast('저장되었습니다.', 'success');
+  showToast(isPartial
+    ? `임시저장되었습니다. 미입력 ${missingItems.length}건은 나중에 이어서 작성할 수 있습니다.`
+    : '저장되었습니다.', 'success');
   // v19.24.0: 저장 후 점검표 선택 화면(Phase 2)으로 전환 — 저장 완료를 시각적으로 확인
   renderTypeStatusCards();
   inputShowTypes();
@@ -6983,7 +6990,7 @@ function renderOverviewStats() {
   if (!box) return;
   try {
     const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
-    const scoped = applyStatsPeriod(allData.filter(d => d.year == year));
+    const scoped = applyStatsPeriod(allData.filter(d => d.year == year && !d.partial)); // v19.28.0: 작성 중 제외
     const periodLbl = statsPeriodLabel();
 
     // 완료 집합 3종 (renderHome 패턴)
@@ -7139,7 +7146,7 @@ function renderStatsDashboard() {
   if (statsSubTab === 'auditor') { renderAuditorStats(); return; }
   // Continue with existing branch stats below...
   const year = parseInt(document.getElementById('statsYear').value);
-  const yearData = applyStatsPeriod(allData.filter(d => d.year == year && d.auditCategory === 'branch'));
+  const yearData = applyStatsPeriod(allData.filter(d => d.year == year && d.auditCategory === 'branch' && !d.partial)); // v19.28.0: 작성 중 제외
   // 지점 전용 REGIONS (협력사(본사) 제외)
   const BRANCH_REGIONS = Object.entries(REGIONS).filter(([k]) => k !== '협력사(본사)');
 
@@ -7553,7 +7560,7 @@ function switchStatsSubTab(tab) {
 
 function renderDivisionStats() {
   const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
-  const divData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'division' && d.year == year));
+  const divData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'division' && d.year == year && !d.partial)); // v19.28.0: 작성 중 제외
 
   let html = '';
 
@@ -7709,7 +7716,7 @@ function renderDivisionStats() {
 // ============================================================================
 function renderOutsourcingStats() {
   const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
-  const outData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'outsourcing' && d.year == year));
+  const outData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'outsourcing' && d.year == year && !d.partial)); // v19.28.0: 작성 중 제외
 
   let html = '';
   html += `<div class="flex items-center gap-3 mb-4">`;
@@ -9553,7 +9560,8 @@ function calcScheduleStatus(item) {
   const expectedTypes = getExpectedTypesForStation(station);
   const totalExpected = expectedTypes.length;
   const completedTypes = expectedTypes.filter(type => {
-    return allData.some(d => d.year == year && (d.station === station || d.division === station) && d.type === type);
+    // v19.28.0: 작성 중(부분 저장) 레코드는 완료로 세지 않음
+    return allData.some(d => d.year == year && (d.station === station || d.division === station) && d.type === type && !d.partial);
   });
   const completedCount = completedTypes.length;
 
@@ -11862,8 +11870,8 @@ function renderHome() {
   const currentYear = new Date().getFullYear();
   const yearData = allData.filter(d => d.year == currentYear);
 
-  // 진행률: scheduleData 등록 기준 (지점만, 협력사 제외)
-  const completedStations = new Set(yearData.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)').map(d => d.station));
+  // 진행률: scheduleData 등록 기준 (지점만, 협력사 제외) — v19.28.0: 작성 중(부분 저장) 제외
+  const completedStations = new Set(yearData.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)' && !d.partial).map(d => d.station));
   const scheduledBranchHome = new Set(scheduleData.filter(s => s.year == currentYear && s.auditTarget === 'branch').map(s => s.station));
   const totalStations = scheduledBranchHome.size;
   const completedScheduledHome = [...completedStations].filter(s => scheduledBranchHome.has(s)).length;
@@ -11872,6 +11880,7 @@ function renderHome() {
   // Overall average (grade 방식만 집계, binary 방식 제외, 협력사 제외, VOC 모니터링 제외, 전항목 N/A 제외)
   let totalAvg = 0, totalCount = 0;
   yearData.forEach(d => {
+    if (d.partial) return; // v19.28.0: 작성 중(부분 저장)은 종합 평균서 제외
     if (getScoringMethod(d.type) === 'binary') return;
     if (MONITORING_BRANCH_TYPES.includes(d.type)) return; // VOC 등 모니터링 점검표는 종합 점수 미반영
     if (d.region === '협력사(본사)') return;
@@ -11884,8 +11893,8 @@ function renderHome() {
   });
   const overallAvg = totalCount > 0 ? (totalAvg / totalCount).toFixed(2) : '-';
 
-  // 실/본부 진행률 계산 — scheduleData 등록 기준
-  const divisionData = yearData.filter(d => d.auditCategory === 'division');
+  // 실/본부 진행률 계산 — scheduleData 등록 기준 (v19.28.0: 작성 중 제외)
+  const divisionData = yearData.filter(d => d.auditCategory === 'division' && !d.partial);
   const completedDivisions = new Set(divisionData.map(d => d.division || d.station));
   const scheduledDivHome = new Set(scheduleData.filter(s => s.year == currentYear && s.auditTarget === 'division').map(s => s.station));
   const totalDivisions = scheduledDivHome.size || DIVISION_NAMES.length;
@@ -11975,7 +11984,7 @@ function renderHome() {
   `;
 
   // Recent audits — 심사일 기준 최신순 정렬 (v19.21.2: 지점 + 실/본부 + 외주협력업체 통합 — 이전엔 completedStations만 써서 실/본부·외주 누락 버그)
-  const completedOutsourcing = new Set(yearData.filter(d => d.region === '협력사(본사)').map(d => d.station).filter(Boolean));
+  const completedOutsourcing = new Set(yearData.filter(d => d.region === '협력사(본사)' && !d.partial).map(d => d.station).filter(Boolean));
   const completedAll = new Set([...completedStations, ...completedDivisions, ...completedOutsourcing]);
   const stationDates = {};
   yearData.forEach(d => {
@@ -12345,7 +12354,8 @@ function renderInputPendingStations() {
 
     const expected = getExpectedTypesForStation(s.station);
     const completedTypes = expected.filter(type => {
-      return allData.some(d => d.year == year && (d.station === s.station || d.division === s.station) && d.type === type);
+      // v19.28.0: 작성 중(부분 저장)은 완료로 세지 않음 → 이어쓰기 대상으로 목록 유지
+      return allData.some(d => d.year == year && (d.station === s.station || d.division === s.station) && d.type === type && !d.partial);
     });
     if (completedTypes.length < expected.length) {
       pendingStations.push({
@@ -14844,7 +14854,11 @@ function _renderMemoCard(memo, opts) {
     actions += `<button onclick="copyMemoToClipboard(${memo.year},'${_esc(memo.station)}','${memo.id}')" title="그룹웨어용 텍스트로 복사" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">📋 복사</button>`;
   }
   if (isMine) {
-    actions += `<button onclick="onMemoEdit('${memo.id}','${memo.year}','${_esc(memo.station)}')" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">수정</button>`;
+    // v19.28.0: 점검표 화면(사이드 패널/인라인/바텀시트)에서는 메모 탭으로 이동하지 않고 그 자리에서 수정
+    const editCall = opts.editInline
+      ? `onMemoQuickEdit('${memo.id}',${memo.year},'${_esc(memo.station)}')`
+      : `onMemoEdit('${memo.id}','${memo.year}','${_esc(memo.station)}')`;
+    actions += `<button onclick="${editCall}" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">수정</button>`;
   }
   if (canDelete) {
     actions += `<button onclick="onMemoDelete(${memo.year},'${_esc(memo.station)}','${memo.id}')" style="background:none;border:none;font-size:13px;color:#D20015;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.08)'" onmouseout="this.style.background='none'">삭제</button>`;
@@ -15450,7 +15464,7 @@ function onMemoEdit(memoId, year, station) {
 // v19.11.0: Phase 4 사이드 패널 (데스크톱) / 바텀시트 (모바일) / 상단 배지
 // =============================================================================
 let _memoPanelOpen = true; // 데스크톱 기본 펼침
-let _memoQuickDraft = { type: 'note', visibility: 'public', text: '', items: [], title: '', open: false };
+let _memoQuickDraft = { type: 'note', visibility: 'public', text: '', items: [], title: '', open: false, _editingId: null };
 
 function _phase4Scope() {
   // Phase 4 컨텍스트 — selectedYear, selectedStation, selectedAuditCategory
@@ -15473,6 +15487,7 @@ function _renderMemoPanelInner() {
   // v19.11.3: 빠른 작성 폼 — Notion 스타일, 폰트/패딩 키움
   const qd = _memoQuickDraft;
   const isCl = qd.type === 'checklist';
+  const isEditing = !!qd._editingId; // v19.28.0: 패널 인라인 수정 모드
   const itemsHTML = (qd.items || []).map((it, i) =>
     `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
       <input type="text" class="apple-input" placeholder="확인 항목 입력" value="${_esc(it.text)}" oninput="_memoQuickDraft.items[${i}].text=this.value;" style="flex:1;padding:10px 14px;font-size:14px;">
@@ -15487,6 +15502,7 @@ function _renderMemoPanelInner() {
 
   const quickForm = !qd.open ? `<button onclick="onMemoQuickOpen()" style="background:none;border:1.5px dashed rgba(210,0,21,0.3);color:#D20015;border-radius:12px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:18px;display:inline-flex;align-items:center;gap:6px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.05)';this.style.borderColor='#D20015'" onmouseout="this.style.background='none';this.style.borderColor='rgba(210,0,21,0.3)'">+ 메모/체크리스트 추가</button>` : `
     <div class="apple-card" style="padding:18px;margin-bottom:18px;background:#fafbfc;border:1px solid rgba(192,206,209,0.4);">
+      ${isEditing ? '<div style="font-size:13px;font-weight:700;color:#B45309;margin-bottom:12px;display:flex;align-items:center;gap:6px;">✏️ 메모 수정 중</div>' : ''}
       <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
         <!-- 타입 세그먼티드 -->
         <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:10px;padding:3px;">
@@ -15505,7 +15521,7 @@ function _renderMemoPanelInner() {
         : `<textarea class="apple-input" rows="4" placeholder="자유롭게 메모하세요" oninput="_memoQuickDraft.text=this.value;" style="font-size:15px;padding:12px 14px;line-height:1.5;resize:vertical;margin-bottom:14px;width:100%;">${_esc(qd.text)}</textarea>`}
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button onclick="onMemoQuickCancel()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 18px;">취소</button>
-        <button onclick="onMemoQuickSave()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 22px;font-weight:600;">저장</button>
+        <button onclick="onMemoQuickSave()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 22px;font-weight:600;">${isEditing ? '수정 저장' : '저장'}</button>
       </div>
     </div>`;
 
@@ -15516,7 +15532,7 @@ function _renderMemoPanelInner() {
         <span style="font-size:12px;color:#9EA2A1;font-weight:600;background:rgba(158,162,161,0.12);padding:1px 8px;border-radius:980px;">${list.length}</span>
       </div>`;
     if (list.length === 0) h += `<div style="font-size:13px;color:#C0CED1;padding:10px 4px;">아직 없습니다</div>`;
-    else h += '<div style="display:flex;flex-direction:column;gap:10px;">' + list.map(m => _renderMemoCard(m, { showScope: false })).join('') + '</div>';
+    else h += '<div style="display:flex;flex-direction:column;gap:10px;">' + list.map(m => _renderMemoCard(m, { showScope: false, editInline: true })).join('') + '</div>';
     h += '</div>';
     return h;
   }
@@ -15644,7 +15660,7 @@ function closeMemoPanel() {
 
 // 빠른 작성 액션 (Phase 4 패널)
 // v19.11.1: _memoQuickDraft를 절대 재할당하지 말 것 (window 노출 참조와 분리되면 inline oninput이 옛 객체에 mutate되어 빈 값으로 저장 시도됨)
-function onMemoQuickOpen() { _memoQuickDraft.open = true; renderMemoSidePanel(); }
+function onMemoQuickOpen() { _memoQuickDraft._editingId = null; _memoQuickDraft.open = true; renderMemoSidePanel(); }
 function onMemoQuickCancel() {
   _memoQuickDraft.type = 'note';
   _memoQuickDraft.visibility = 'public';
@@ -15652,7 +15668,35 @@ function onMemoQuickCancel() {
   _memoQuickDraft.items = [];
   _memoQuickDraft.title = '';
   _memoQuickDraft.open = false;
+  _memoQuickDraft._editingId = null; // v19.28.0: 수정 모드 종료
   renderMemoSidePanel();
+}
+// v19.28.0: 점검표 화면에서 메모 탭으로 이동하지 않고 그 자리(빠른 작성 폼)에서 수정
+function onMemoQuickEdit(memoId, year, station) {
+  const memos = loadMemos(year, station);
+  const memo = memos[memoId];
+  if (!memo) { showToast('메모를 찾을 수 없습니다.', 'error'); return; }
+  const qd = _memoQuickDraft; // 재할당 금지 — 속성만 mutate (window 노출 참조 유지)
+  qd.type = memo.type;
+  qd.visibility = memo.visibility;
+  qd.text = memo.content || '';
+  qd.title = memo.title || '';
+  // 기존 항목의 id/checked/checkedAt/kind/emoji 보존 (텍스트만 편집)
+  qd.items = (memo.items || []).map(it => ({
+    id: it.id,
+    text: it.text,
+    checked: !!it.checked,
+    checkedAt: it.checkedAt || null,
+    kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
+    emoji: (typeof it.emoji === 'string') ? it.emoji : ''
+  }));
+  qd._editingId = memo.id;
+  qd.open = true;
+  renderMemoSidePanel();
+  // 모바일 바텀시트로 보고 있을 때도 폼이 갱신되도록
+  const sheetBody = document.getElementById('memoBottomSheetBody');
+  const sheet = document.getElementById('memoBottomSheet');
+  if (sheet && sheetBody && !sheet.classList.contains('hidden')) sheetBody.innerHTML = _renderMemoPanelInner();
 }
 function onMemoQuickType(t) { _memoQuickDraft.type = t; if (t === 'checklist') _memoQuickDraft.visibility = 'private'; renderMemoSidePanel(); }
 function onMemoQuickVisibility(v) { if (_memoQuickDraft.type === 'checklist') return; _memoQuickDraft.visibility = v; renderMemoSidePanel(); }
@@ -15663,11 +15707,23 @@ function onMemoQuickSave() {
   if (!station) { showToast('지점을 선택하세요.', 'error'); return; }
   const qd = _memoQuickDraft;
   const memo = { year, station, scopeType, type: qd.type, visibility: qd.visibility };
+  if (qd._editingId) memo.id = qd._editingId; // v19.28.0: 수정 모드 — 그 자리에서 갱신
   if (qd.type === 'note') memo.content = qd.text;
-  else { memo.title = qd.title || '체크리스트'; memo.items = (qd.items || []).map(it => ({ id: makeCheckItemId(), text: it.text, checked: false })); }
+  else {
+    memo.title = qd.title || '';
+    // v19.28.0: 수정 시 기존 항목 id/checked/checkedAt/kind/emoji 보존, 신규는 새 id
+    memo.items = (qd.items || []).map(it => ({
+      id: it.id || makeCheckItemId(),
+      text: it.text,
+      checked: !!it.checked,
+      checkedAt: it.checkedAt || null,
+      kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
+      emoji: (typeof it.emoji === 'string') ? it.emoji : ''
+    }));
+  }
   const saved = saveMemo(memo);
   if (saved) {
-    showToast('저장되었습니다.', 'success');
+    showToast(qd._editingId ? '수정되었습니다.' : '저장되었습니다.', 'success');
     onMemoQuickCancel();
   }
 }
@@ -16989,7 +17045,7 @@ Object.assign(window, {
   onMemoDraftAddItem, onMemoDraftRemoveItem, onMemoDraftReset, onMemoDraftSave,
   onMemoDelete, onMemoChecklistToggle, onMemoEdit,
   onMemoQuickOpen, onMemoQuickCancel, onMemoQuickType, onMemoQuickVisibility,
-  onMemoQuickAddItem, onMemoQuickRemoveItem, onMemoQuickSave,
+  onMemoQuickAddItem, onMemoQuickRemoveItem, onMemoQuickSave, onMemoQuickEdit,
   onSDMemoOpenWorkspace, onHomeMemoQuickAdd,
   setSDMemoFilter, toggleSDMemoExpanded,
   // v19.16.2: 체크리스트 강화 — 헤더/드래그/이모지/Enter/복사/일괄
