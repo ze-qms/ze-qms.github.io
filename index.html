@@ -1176,6 +1176,7 @@ select.apple-input {
       </div>
       <div id="statsSubTabBar" class="flex gap-2 mt-3 overflow-x-auto flex-nowrap" style="-webkit-overflow-scrolling:touch;">
         <button class="sub-tab sub-tab-active" onclick="switchStatsSubTab('overview')" id="statsSubOverview">종합</button>
+        <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('periodReport')" id="statsSubPeriodReport">기간 리포트</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('branch')" id="statsSubBranch">지점 성숙도</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('division')" id="statsSubDivision">실/본부 심사</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchStatsSubTab('outsourcing')" id="statsSubOutsourcing">외주협력업체</button>
@@ -1195,6 +1196,7 @@ select.apple-input {
       </script>
     </div>
     <div id="overviewStatsContent"></div>
+    <div id="periodReportStatsContent" class="hidden"></div>
     <div id="branchStatsContent" class="hidden">
     <div id="summaryCards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"></div>
     <div class="apple-card p-6 mb-6">
@@ -1237,7 +1239,24 @@ select.apple-input {
     <div class="mb-6">
       <h2 class="section-title">분석</h2>
       <p class="section-subtitle mt-1">QMS/SMS 관점 성숙도 데이터 분석</p>
-      <div id="analysisYearSegment" style="display:inline-flex;background:#f9f9fb;border-radius:980px;padding:3px;margin-top:10px;"></div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;">
+        <div id="analysisYearSegment" style="display:inline-flex;background:#f9f9fb;border-radius:980px;padding:3px;"></div>
+        <select id="analysisPeriodSel" class="apple-input" style="width:auto;min-width:110px;padding-top:7px;padding-bottom:7px;" onchange="onAnalysisPeriodSelChange()">
+          <option value="year" selected>연간 전체</option>
+          <optgroup label="분기">
+            <option value="q1">1분기</option>
+            <option value="q2">2분기</option>
+            <option value="q3">3분기</option>
+            <option value="q4">4분기</option>
+          </optgroup>
+          <optgroup label="월별">
+            <option value="m1">1월</option><option value="m2">2월</option><option value="m3">3월</option>
+            <option value="m4">4월</option><option value="m5">5월</option><option value="m6">6월</option>
+            <option value="m7">7월</option><option value="m8">8월</option><option value="m9">9월</option>
+            <option value="m10">10월</option><option value="m11">11월</option><option value="m12">12월</option>
+          </optgroup>
+        </select>
+      </div>
       <div id="analysisSubTabBar" class="flex gap-2 mt-3 overflow-x-auto flex-nowrap" style="-webkit-overflow-scrolling:touch;">
         <button class="sub-tab sub-tab-active" onclick="switchAnalysisSubTab('branch')" id="analysisSubBranch">지점 성숙도</button>
         <button class="sub-tab sub-tab-inactive" onclick="switchAnalysisSubTab('maturityResult')" id="analysisSubMaturityResult">성숙도 평가 결과</button>
@@ -1721,7 +1740,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.28.0',
+  version: '19.29.4',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7138,9 +7157,358 @@ function renderOverviewStats() {
   }
 }
 
+// ── v19.29.0: 기간 종합 리포트 ──────────────────────────────────────
+// statsYear + statsPeriod(분기/월) 기준 한 화면 요약: 진척·평균·CAR·취약항목 + 전기간 대비
+function _periodMatch(d, mode, q, m) {
+  if (mode === 'year') return true;
+  const mo = _statsRecordMonth(d);
+  if (mo === null) return false;
+  if (mode === 'quarter') return Math.ceil(mo / 3) === q;
+  return mo === m;
+}
+function _prevPeriodOf(year) {
+  // statsPeriod 기준 직전 기간 반환 {year, mode, quarter, month, label}
+  if (statsPeriod.mode === 'quarter') {
+    let q = statsPeriod.quarter - 1, y = year;
+    if (q < 1) { q = 4; y = year - 1; }
+    return { year: y, mode: 'quarter', quarter: q, month: 0, label: y + '년 ' + q + '분기' };
+  }
+  if (statsPeriod.mode === 'month') {
+    let mo = statsPeriod.month - 1, y = year;
+    if (mo < 1) { mo = 12; y = year - 1; }
+    return { year: y, mode: 'month', quarter: 0, month: mo, label: y + '년 ' + mo + '월' };
+  }
+  return { year: year - 1, mode: 'year', quarter: 0, month: 0, label: (year - 1) + '년' };
+}
+function _prWeakAgg(records) {
+  const agg = {}; // type|id
+  records.forEach(d => {
+    const cl = getChecklist(d.type);
+    const binary = getScoringMethod(d.type) === 'binary';
+    for (const [, cd] of Object.entries(cl)) {
+      (cd.items || []).forEach(it => {
+        const v = d.scores ? d.scores[it.id] : null;
+        let weak = false;
+        if (binary) weak = (v === 'U' || v === 'NO' || v === 'N');
+        else weak = (v != null && v !== 'N/A' && v !== '' && !isNaN(Number(v)) && Number(v) <= 2);
+        if (weak) {
+          const k = d.type + '|' + it.id;
+          if (!agg[k]) agg[k] = { type: d.type, id: it.id, text: it.text || '', count: 0, binary };
+          agg[k].count++;
+        }
+      });
+    }
+  });
+  return Object.values(agg).sort((a, b) => b.count - a.count);
+}
+function _prAvgMaturity(records) {
+  const gr = records.filter(d => getScoringMethod(d.type) !== 'binary' && d.region !== '협력사(본사)');
+  if (!gr.length) return null;
+  return gr.reduce((s, d) => s + calculateScores(d.scores, getChecklist(d.type)).overallAverage, 0) / gr.length;
+}
+function _prAvgCompliance(records) {
+  const bn = records.filter(d => getScoringMethod(d.type) === 'binary');
+  if (!bn.length) return null;
+  return bn.reduce((s, d) => s + calculateBinaryScores(d.scores, getChecklist(d.type)).complianceRate, 0) / bn.length;
+}
+function _prDelta(curr, prev, digits, suffix, invert) {
+  // invert=false: 증가가 좋음(녹색). 취약/CAR은 invert=true(감소가 좋음)
+  if (curr == null) return '';
+  if (prev == null) return `<span style="font-size:11px;color:#9EA2A1;margin-left:6px;">전기간 데이터 없음</span>`;
+  const diff = curr - prev;
+  if (Math.abs(diff) < (digits ? Math.pow(10, -digits) / 2 : 0.5)) return `<span style="font-size:11px;color:#9EA2A1;margin-left:6px;">전기간 대비 변동 없음</span>`;
+  const up = diff > 0;
+  const good = invert ? !up : up;
+  const color = good ? '#22C55E' : '#D20015';
+  const arrow = up ? '▲' : '▼';
+  return `<span style="font-size:11px;color:${color};margin-left:6px;font-weight:600;">${arrow} ${Math.abs(diff).toFixed(digits || 0)}${suffix || ''}</span>`;
+}
+
+// v19.29.3: 기간 리포트 키워드 분석 — 취약/부적합/CAR 내용에서 안전 주제별 출현 빈도 추출
+const PERIOD_KEYWORDS = [
+  { label: '매뉴얼/규정', terms: ['매뉴얼', '규정', '교범', '지침서', '절차서'] },
+  { label: '교육/훈련', terms: ['교육', '훈련'] },
+  { label: '비상대응(LERAP/ERP)', terms: ['비상대응', '비상계획', 'LERAP', 'ERP', '비상구', '비상절차'] },
+  { label: '위험물', terms: ['위험물'] },
+  { label: '인원/업무분장', terms: ['인원', '업무분장', '업무 분장', '분장'] },
+  { label: '시설/장비', terms: ['시설', '장비'] },
+  { label: '변화관리', terms: ['변화관리', '변화 관리'] },
+  { label: '문서/기록관리', terms: ['문서', '기록', '문서화'] },
+  { label: 'SOP/표준절차', terms: ['SOP', '표준업무', '표준 업무', '표준운영', '표준절차'] },
+  { label: '안전지시/전파', terms: ['안전지시', '지시문서', '전파'] },
+  { label: '점검/감사/심사', terms: ['점검', '감사', '심사'] },
+  { label: '안전지표(SPI)', terms: ['지표', 'SPI'] },
+  { label: '협력사/위탁', terms: ['협력사', '위탁', '외주', '조업'] },
+  { label: '보안', terms: ['보안'] },
+  { label: '화재/소방', terms: ['화재', '소방', '소화'] },
+  { label: '제방빙', terms: ['제방빙', '제빙', '방빙'] },
+  { label: '적재/화물', terms: ['적재', '화물', '탑재', '하기', '하역'] },
+  { label: '승무원', terms: ['승무원'] },
+  { label: '정비/감항', terms: ['정비', '감항', 'MEL'] },
+  { label: '보고/이행', terms: ['보고', '이행'] },
+  { label: '권한/책임', terms: ['권한', '책임'] },
+  { label: '모니터링', terms: ['모니터링'] },
+  { label: '램프/지상안전', terms: ['램프', '지상안전', '지상 안전'] },
+  { label: '기상', terms: ['기상'] },
+  { label: '운항/비행', terms: ['운항', '비행'] }
+];
+// v19.29.4: 주제별 "위험도" 가중 — CAR 심각도(Class·Risk Level) + 부적합(U)·취약(저점수) 가중 합산
+function _periodRiskTopics(weak, carItems) {
+  const levelRank = { red: 4, orange: 3, yellow: 2, green: 1 };
+  const classW = { class1: 6, class2: 3, concern: 1.5 };
+  const riskMult = { red: 2, orange: 1.6, yellow: 1.3, green: 1 };
+  const matchT = (txt, t) => { const s = String(txt || ''); return t.terms.some(term => s.indexOf(term) >= 0); };
+  const agg = PERIOD_KEYWORDS.map(k => ({ label: k.label, terms: k.terms, class1: 0, class2: 0, concern: 0, u: 0, low: 0, score: 0, maxLv: 0 }));
+  (carItems || []).forEach(it => {
+    const txt = (it.title || '') + ' ' + (it.category || '');
+    const lv = (typeof riskMeta === 'function' && typeof RISK_MATRIX !== 'undefined') ? (RISK_MATRIX[(riskMeta(it.risk) || {}).code] || null) : null;
+    agg.forEach(t => {
+      if (matchT(txt, t)) {
+        if (it.cls === 'class1') t.class1++; else if (it.cls === 'class2') t.class2++; else if (it.cls === 'concern') t.concern++;
+        t.score += (classW[it.cls] || 1) * (riskMult[lv] || 1);
+        if (lv && levelRank[lv] > t.maxLv) t.maxLv = levelRank[lv];
+      }
+    });
+  });
+  (weak || []).forEach(w => {
+    agg.forEach(t => {
+      if (matchT(w.text, t)) {
+        if (w.binary) { t.u += w.count; t.score += w.count * 2; }
+        else { t.low += w.count; t.score += w.count * 1; }
+      }
+    });
+  });
+  const lvlOrder = { high: 3, midhigh: 2, mid: 1, low: 0 };
+  agg.forEach(t => {
+    if (t.class1 > 0 || t.maxLv === 4) t.level = 'high';
+    else if (t.class2 > 0 || t.maxLv === 3) t.level = 'midhigh';
+    else if (t.concern > 0 || t.u > 0) t.level = 'mid';
+    else t.level = 'low';
+  });
+  // 위험 등급 우선 정렬(높음>상당>주의>경미), 같은 등급 내 가중점수순 → '경미' 다수가 '상당'보다 위로 가는 것 방지
+  return agg.filter(t => t.score > 0).sort((a, b) => (lvlOrder[b.level] - lvlOrder[a.level]) || (b.score - a.score));
+}
+
+function renderPeriodReport() {
+  const box = document.getElementById('periodReportStatsContent');
+  if (!box) return;
+  try {
+    const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
+    const periodLbl = statsPeriodLabel();
+    const prev = _prevPeriodOf(year);
+
+    const scoped = applyStatsPeriod(allData.filter(d => d.year == year && !d.partial));
+    const prevScoped = allData.filter(d => d.year == prev.year && !d.partial && _periodMatch(d, prev.mode, prev.quarter, prev.month));
+
+    // 유형별 분류
+    const isBranch = d => d.auditCategory === 'branch' && d.region !== '협력사(본사)';
+    const isDiv = d => d.auditCategory === 'division';
+    const isOut = d => d.region === '협력사(본사)';
+    const completedSet = arr => ({
+      branch: new Set(arr.filter(isBranch).map(d => d.station).filter(Boolean)),
+      division: new Set(arr.filter(isDiv).map(d => d.division || d.station).filter(Boolean)),
+      outsourcing: new Set(arr.filter(isOut).map(d => d.station).filter(Boolean))
+    });
+    const cur = completedSet(scoped), pre = completedSet(prevScoped);
+    const curDone = cur.branch.size + cur.division.size + cur.outsourcing.size;
+    const preDone = pre.branch.size + pre.division.size + pre.outsourcing.size;
+
+    // 1) 심사 진척 — scheduleData 기준
+    const schedThis = (typeof scheduleData !== 'undefined' ? scheduleData : []).filter(s => s.year == year && _schedInPeriod(s));
+    const statusTally = { completed: 0, in_progress: 0, planned: 0, delayed: 0 };
+    schedThis.forEach(s => {
+      const st = calcScheduleStatus(s).status;
+      if (st === 'completed') statusTally.completed++;
+      else if (st === 'in_progress') statusTally.in_progress++;
+      else if (st === 'overdue' || st === 'incomplete') statusTally.delayed++;
+      else statusTally.planned++; // upcoming, tbd
+    });
+    const planTotal = schedThis.length;
+
+    // 2) 평균 성숙도/적합률
+    const matCur = _prAvgMaturity(scoped.filter(isBranch)), matPre = _prAvgMaturity(prevScoped.filter(isBranch));
+    const divCur = _prAvgCompliance(scoped.filter(isDiv)), divPre = _prAvgCompliance(prevScoped.filter(isDiv));
+    const outCur = _prAvgCompliance(scoped.filter(isOut)), outPre = _prAvgCompliance(prevScoped.filter(isOut));
+
+    // 3) CAR 발행 — collectCarItems + monthOf 기반 기간 필터
+    const monthOf = {};
+    allData.filter(d => d.year == year).forEach(d => {
+      const mo = _statsRecordMonth(d);
+      if (mo != null && (monthOf[d.station] == null || mo < monthOf[d.station])) monthOf[d.station] = mo;
+    });
+    const carInPeriod = it => statsPeriod.mode === 'year' ? true
+      : (monthOf[it.station] != null && (statsPeriod.mode === 'quarter' ? Math.ceil(monthOf[it.station] / 3) === statsPeriod.quarter : monthOf[it.station] === statsPeriod.month));
+    const carItems = (typeof collectCarItems === 'function' ? collectCarItems(year) : []).filter(carInPeriod);
+    const clsCount = {}; CAR_CLASSES.forEach(c => clsCount[c.key] = 0);
+    carItems.forEach(it => { if (clsCount[it.cls] != null) clsCount[it.cls]++; });
+    const riskDist = { red: 0, orange: 0, yellow: 0, green: 0 };
+    carItems.forEach(it => { const m = riskMeta(it.risk); if (m) { const lv = RISK_MATRIX[m.code]; if (lv) riskDist[lv]++; } });
+    // 직전 기간 CAR (대비용 건수)
+    const prevMonthOf = {};
+    allData.filter(d => d.year == prev.year).forEach(d => { const mo = _statsRecordMonth(d); if (mo != null && (prevMonthOf[d.station] == null || mo < prevMonthOf[d.station])) prevMonthOf[d.station] = mo; });
+    const prevCarCount = (typeof collectCarItems === 'function' ? collectCarItems(prev.year) : []).filter(it =>
+      prev.mode === 'year' ? true : (prevMonthOf[it.station] != null && (prev.mode === 'quarter' ? Math.ceil(prevMonthOf[it.station] / 3) === prev.quarter : prevMonthOf[it.station] === prev.month))).length;
+
+    // 4) 취약/부적합 상위
+    const weak = _prWeakAgg(scoped.filter(d => isBranch(d) || isDiv(d) || isOut(d)));
+    const typeLbl = (t) => { const r = CHECKLIST_REGISTRY[t]; return r ? r.name.replace('성숙도 점검표', '').replace('품질심사', '품질').replace('안전감사', '안전').replace('비행안전문서시스템', 'FSDS').trim() : t; };
+
+    // ===== 렌더 =====
+    const kpiCard = (label, valHtml, deltaHtml, color) =>
+      `<div class="apple-card" style="padding:18px;"><div style="font-size:12px;color:#9EA2A1;margin-bottom:6px;">${label}</div>`
+      + `<div><span style="font-size:26px;font-weight:700;color:${color};">${valHtml}</span></div>`
+      + `<div style="margin-top:4px;">${deltaHtml || ''}</div></div>`;
+
+    let html = '';
+    // 헤더
+    html += `<div class="apple-card p-6 mb-4" style="background:linear-gradient(135deg,#fff 0%,#fbfbfd 100%);">`
+      + `<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">`
+      + `<div><div style="font-size:13px;color:#9EA2A1;">기간 종합 리포트</div>`
+      + `<h2 style="font-size:24px;font-weight:700;letter-spacing:-0.4px;color:#303A3C;margin:2px 0 0;">${periodLbl}</h2>`
+      + `<div style="font-size:13px;color:#9EA2A1;margin-top:4px;">직전 기간(${prev.label}) 대비 · 작성 중 제외</div></div>`
+      + `<button onclick="copyPeriodReport()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 16px;">📋 그룹웨어 복사</button>`
+      + `</div></div>`;
+
+    // KPI 4종
+    html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">`;
+    html += kpiCard('완료 심사', `${curDone}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(curDone, preDone, 0, '건', false), '#303A3C');
+    html += kpiCard('지점 평균 성숙도', matCur != null ? matCur.toFixed(2) : '<span style="font-size:16px;color:#C0CED1;">-</span>', matCur != null ? _prDelta(matCur, matPre, 2, '', false) : '', matCur != null ? avgColor(matCur) : '#C0CED1');
+    const compShow = divCur != null ? divCur : outCur;
+    const compPrev = divCur != null ? divPre : outPre;
+    html += kpiCard('실/본부·외주 적합률', compShow != null ? compShow.toFixed(0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>', compShow != null ? _prDelta(compShow, compPrev, 0, '%p', false) : '', '#0067C4');
+    html += kpiCard('CAR 발행', `${carItems.length}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(carItems.length, prevCarCount, 0, '건', true), '#D20015');
+    html += `</div>`;
+
+    // 진척 현황
+    const stStyle = { completed: ['#22C55E', '완료'], in_progress: ['#0067C4', '진행 중'], planned: ['#9EA2A1', '예정'], delayed: ['#D20015', '지연/미완료'] };
+    html += `<div class="apple-card p-6 mb-4"><h3 style="font-size:16px;font-weight:600;color:#303A3C;margin:0 0 4px;">심사 진척·완료 현황</h3>`
+      + `<p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">${periodLbl} 계획 ${planTotal}건 기준</p>`;
+    if (planTotal === 0) {
+      html += `<div style="font-size:14px;color:#9EA2A1;">해당 기간에 등록된 심사 일정이 없습니다. (완료 ${curDone}건)</div>`;
+    } else {
+      const pct = n => planTotal ? (n / planTotal * 100) : 0;
+      html += `<div style="display:flex;height:14px;border-radius:980px;overflow:hidden;margin-bottom:12px;background:#f0f0f2;">`;
+      ['completed', 'in_progress', 'planned', 'delayed'].forEach(k => { if (statusTally[k]) html += `<div style="width:${pct(statusTally[k])}%;background:${stStyle[k][0]};"></div>`; });
+      html += `</div><div style="display:flex;flex-wrap:wrap;gap:14px;">`;
+      ['completed', 'in_progress', 'planned', 'delayed'].forEach(k => {
+        html += `<div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${stStyle[k][0]};"></span><span style="font-size:13px;color:#565A5B;">${stStyle[k][1]} <b style="color:#303A3C;">${statusTally[k]}</b></span></div>`;
+      });
+      html += `</div>`;
+    }
+    html += `<div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;padding-top:14px;border-top:1px solid rgba(192,206,209,0.3);">`
+      + `<div style="font-size:13px;color:#565A5B;">지점 <b style="color:#303A3C;">${cur.branch.size}</b></div>`
+      + `<div style="font-size:13px;color:#565A5B;">실/본부 <b style="color:#303A3C;">${cur.division.size}</b></div>`
+      + `<div style="font-size:13px;color:#565A5B;">외주 <b style="color:#303A3C;">${cur.outsourcing.size}</b></div></div>`;
+    html += `</div>`;
+
+    // CAR 발행 현황
+    html += `<div class="apple-card p-6 mb-4"><h3 style="font-size:16px;font-weight:600;color:#303A3C;margin:0 0 14px;">CAR(개선조치요구서) 발행 현황 <span style="font-size:13px;color:#9EA2A1;font-weight:500;">${carItems.length}건</span></h3>`;
+    if (!carItems.length) {
+      html += `<div style="font-size:14px;color:#9EA2A1;">해당 기간 발행된 CAR이 없습니다.</div>`;
+    } else {
+      html += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">` + CAR_CLASSES.map(c =>
+        `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;padding:5px 12px;border-radius:980px;background:${c.bg};color:${c.color};"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label} ${clsCount[c.key] || 0}</span>`
+      ).join('') + `</div>`;
+      const RISK_LV2 = [['red', '높음'], ['orange', '상당'], ['yellow', '중간'], ['green', '낮음']];
+      const dots = RISK_LV2.filter(([lv]) => riskDist[lv]).map(([lv, nm]) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;"><span style="width:9px;height:9px;border-radius:50%;background:${RISK_COLORS[lv]};"></span><span style="font-size:13px;color:#565A5B;">${nm} ${riskDist[lv]}</span></span>`).join('');
+      if (dots) html += `<div style="font-size:13px;color:#565A5B;"><span style="color:#9EA2A1;margin-right:8px;">위험도 분포</span>${dots}</div>`;
+    }
+    html += `</div>`;
+
+    // 위험 주제 분석: CAR 심각도(Class·Risk Level) + 부적합(U)·취약(저점수) 가중 → 위험한 주제 순
+    const riskTopics = _periodRiskTopics(weak, carItems);
+    const LVL = {
+      high: { label: '위험 높음', color: '#D20015', bg: 'rgba(210,0,21,0.12)', dot: '#D20015' },
+      midhigh: { label: '위험 상당', color: '#C2410C', bg: 'rgba(245,158,11,0.16)', dot: '#F59E0B' },
+      mid: { label: '주의', color: '#B45309', bg: 'rgba(234,179,8,0.20)', dot: '#EAB308' },
+      low: { label: '경미', color: '#565A5B', bg: 'rgba(158,162,161,0.14)', dot: '#9EA2A1' }
+    };
+    html += `<div class="apple-card p-6 mb-4"><h3 style="font-size:16px;font-weight:600;color:#303A3C;margin:0 0 4px;">위험 주제 분석</h3>`
+      + `<p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">CAR 심각도(Class·위험도)와 부적합(U)·취약 항목을 가중해 위험한 주제 순으로 정렬합니다</p>`;
+    if (!riskTopics.length) {
+      html += `<div style="font-size:14px;color:#9EA2A1;">이 기간 위험 주제로 집계된 항목이 없습니다.</div>`;
+    } else {
+      html += riskTopics.slice(0, 12).map(t => {
+        const lv = LVL[t.level] || LVL.low;
+        const parts = [];
+        if (t.class1) parts.push(`<span style="color:#D20015;font-weight:600;">Class 1 ${t.class1}</span>`);
+        if (t.class2) parts.push(`<span style="color:#F59E0B;font-weight:600;">Class 2 ${t.class2}</span>`);
+        if (t.concern) parts.push(`<span style="color:#CA8A04;">Concern ${t.concern}</span>`);
+        if (t.u) parts.push(`<span style="color:#C2410C;">부적합 ${t.u}</span>`);
+        if (t.low) parts.push(`<span style="color:#9EA2A1;">취약 ${t.low}</span>`);
+        return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(192,206,209,0.25);">`
+          + `<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:980px;background:${lv.bg};color:${lv.color};min-width:78px;justify-content:center;"><span style="width:7px;height:7px;border-radius:50%;background:${lv.dot};"></span>${lv.label}</span>`
+          + `<span style="flex-shrink:0;font-size:13px;font-weight:600;color:#303A3C;min-width:0;">${_esc(t.label)}</span>`
+          + `<span style="font-size:11px;color:#565A5B;flex:1;min-width:0;text-align:right;">${parts.join(' · ')}</span></div>`;
+      }).join('');
+    }
+    // 보조: 상위 취약·부적합 항목 (개별 항목 확인용, 부적합 우선)
+    const weakSorted = weak.slice().sort((a, b) => (b.binary - a.binary) || (b.count - a.count));
+    if (weakSorted.length) {
+      html += `<div style="font-size:13px;font-weight:700;color:#303A3C;margin:18px 0 6px;">개별 항목 <span style="font-size:11px;color:#9EA2A1;font-weight:500;">(부적합 우선 · 상위 8)</span></div>`;
+      html += weakSorted.slice(0, 8).map(w =>
+        `<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(192,206,209,0.2);">`
+        + `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#fff;background:${w.binary ? '#D20015' : '#F59E0B'};border-radius:980px;padding:1px 8px;min-width:34px;text-align:center;">${w.count}</span>`
+        + `<span style="flex-shrink:0;font-size:11px;font-weight:600;color:#0067C4;min-width:42px;">${_esc(typeLbl(w.type))}</span>`
+        + `<span style="flex-shrink:0;font-size:11px;color:#9EA2A1;">${_esc(w.id)}</span>`
+        + `<span style="font-size:13px;color:#303A3C;flex:1;min-width:0;">${_esc(w.text)}</span>`
+        + `<span style="flex-shrink:0;font-size:10px;color:${w.binary ? '#D20015' : '#9EA2A1'};">${w.binary ? '부적합' : '2점↓'}</span></div>`
+      ).join('');
+    }
+    html += `</div>`;
+
+    box.innerHTML = html;
+
+    // 그룹웨어 복사용 텍스트 캐시
+    const txt = [];
+    txt.push(`[품질심사 기간 종합 리포트] ${periodLbl}`);
+    txt.push(`(직전 ${prev.label} 대비 / 작성 중 제외)`);
+    txt.push('');
+    txt.push(`■ 핵심 지표`);
+    txt.push(`- 완료 심사: ${curDone}건 (지점 ${cur.branch.size} · 실/본부 ${cur.division.size} · 외주 ${cur.outsourcing.size})`);
+    if (matCur != null) txt.push(`- 지점 평균 성숙도: ${matCur.toFixed(2)}`);
+    if (compShow != null) txt.push(`- 실/본부·외주 평균 적합률: ${compShow.toFixed(0)}%`);
+    txt.push(`- CAR 발행: ${carItems.length}건 (Class1 ${clsCount.class1 || 0} · Class2 ${clsCount.class2 || 0} · Concern ${clsCount.concern || 0})`);
+    txt.push('');
+    if (planTotal) txt.push(`■ 진척: 계획 ${planTotal} / 완료 ${statusTally.completed} · 진행 중 ${statusTally.in_progress} · 예정 ${statusTally.planned} · 지연/미완료 ${statusTally.delayed}`);
+    if (riskTopics.length) {
+      txt.push('');
+      txt.push(`■ 위험 주제 (위험도순): ${riskTopics.slice(0, 8).map(t => { const ll = { high: '높음', midhigh: '상당', mid: '주의', low: '경미' }[t.level] || ''; return t.label + '[' + ll + ']'; }).join(', ')}`);
+    }
+    if (weak.length) {
+      txt.push('');
+      txt.push(`■ 주요 취약·부적합 항목 (상위 ${Math.min(10, weak.length)})`);
+      weak.slice(0, 10).forEach(w => txt.push(`- [${typeLbl(w.type)} ${w.id}] ${w.text} (${w.count}건, ${w.binary ? '부적합' : '2점이하'})`));
+    }
+    window._periodReportText = txt.join('\n');
+  } catch (e) {
+    console.error('renderPeriodReport failed:', e);
+    box.innerHTML = `<div class="apple-card p-6"><div style="color:#D20015;font-size:14px;">기간 리포트를 불러오는 중 오류가 발생했습니다.</div></div>`;
+  }
+}
+function _schedInPeriod(s) {
+  if (statsPeriod.mode === 'year') return true;
+  const mo = parseInt(s.month);
+  if (!mo || isNaN(mo)) return false; // 미정(0) 제외
+  if (statsPeriod.mode === 'quarter') return Math.ceil(mo / 3) === statsPeriod.quarter;
+  return mo === statsPeriod.month;
+}
+function copyPeriodReport() {
+  const t = window._periodReportText || '';
+  if (!t) { showToast('복사할 내용이 없습니다', 'error'); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(() => showToast('리포트가 클립보드에 복사되었습니다', 'success')).catch(() => showToast('복사 실패', 'error'));
+  } else {
+    const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); showToast('리포트가 클립보드에 복사되었습니다', 'success'); } catch (e) { showToast('복사 실패', 'error'); }
+    document.body.removeChild(ta);
+  }
+}
+
 function renderStatsDashboard() {
   if (typeof statsSubTab === 'undefined') window.statsSubTab = 'overview';
   if (statsSubTab === 'overview') { renderOverviewStats(); return; }
+  if (statsSubTab === 'periodReport') { renderPeriodReport(); return; }
   if (statsSubTab === 'division') { renderDivisionStats(); return; }
   if (statsSubTab === 'outsourcing') { renderOutsourcingStats(); return; }
   if (statsSubTab === 'auditor') { renderAuditorStats(); return; }
@@ -7547,7 +7915,7 @@ function toggleSection(sectionId) {
 
 function switchStatsSubTab(tab) {
   window.statsSubTab = tab;
-  const tabs = ['overview', 'branch', 'division', 'outsourcing', 'auditor'];
+  const tabs = ['overview', 'periodReport', 'branch', 'division', 'outsourcing', 'auditor'];
   tabs.forEach(t => {
     const btn = document.getElementById('statsSub' + t.charAt(0).toUpperCase() + t.slice(1));
     if (btn) btn.className = t === tab ? 'sub-tab sub-tab-active' : 'sub-tab sub-tab-inactive';
@@ -7990,7 +8358,7 @@ function renderMaturityResultList() {
   if (!container) return;
   
   // 해당 연도 지점 심사 데이터 수집 (branch 카테고리, grade 방식만)
-  const yearData = allData.filter(d => d.year == year && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)');
+  const yearData = applyAnalysisPeriod(allData.filter(d => d.year == year && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)'));
   const stationSet = new Set();
   yearData.forEach(d => stationSet.add(d.station));
   const stations = [...stationSet];
@@ -8107,6 +8475,32 @@ function renderMaturityResultList() {
   container.innerHTML = html;
 }
 
+// ── 분석 기간 필터 (년/분기/월) ─ 통계의 statsPeriod와 독립 ─────────
+let analysisPeriod = { mode: 'year', quarter: Math.ceil((new Date().getMonth() + 1) / 3), month: new Date().getMonth() + 1 };
+function inAnalysisPeriod(d) {
+  if (analysisPeriod.mode === 'year') return true; // 연도는 호출부에서 이미 필터
+  const m = _statsRecordMonth(d);
+  if (m === null) return false; // 날짜 미상은 분기/월 집계서 제외
+  if (analysisPeriod.mode === 'quarter') return Math.ceil(m / 3) === analysisPeriod.quarter;
+  return m === analysisPeriod.month;
+}
+function applyAnalysisPeriod(arr) { return arr.filter(inAnalysisPeriod); }
+function analysisPeriodLabel() {
+  const y = parseInt(document.getElementById('analysisYear')?.value || new Date().getFullYear());
+  if (analysisPeriod.mode === 'quarter') return y + '년 ' + analysisPeriod.quarter + '분기';
+  if (analysisPeriod.mode === 'month') return y + '년 ' + analysisPeriod.month + '월';
+  return y + '년';
+}
+function onAnalysisPeriodSelChange() {
+  const sel = document.getElementById('analysisPeriodSel');
+  if (!sel) return;
+  const v = sel.value;
+  if (v === 'year') analysisPeriod.mode = 'year';
+  else if (v.charAt(0) === 'q') { analysisPeriod.mode = 'quarter'; analysisPeriod.quarter = parseInt(v.slice(1)); }
+  else if (v.charAt(0) === 'm') { analysisPeriod.mode = 'month'; analysisPeriod.month = parseInt(v.slice(1)); }
+  renderAnalysis();
+}
+
 function renderAnalysis() {
   if (typeof analysisSubTab === 'undefined') window.analysisSubTab = 'branch';
   if (analysisSubTab === 'maturityResult') { renderMaturityResultList(); return; }
@@ -8114,14 +8508,14 @@ function renderAnalysis() {
   if (analysisSubTab === 'outsourcing') { renderOutsourcingAnalysis(); return; }
   const year = parseInt(document.getElementById('analysisYear').value);
   // 지점 성숙도 분석: grade 타입만 (안전감사 binary 제외), 협력사(본사) 제외
-  const yearData = allData.filter(d => d.year == year && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)');
-  const prevYearData = allData.filter(d => d.year == year - 1 && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)');
+  const yearData = applyAnalysisPeriod(allData.filter(d => d.year == year && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)'));
+  const prevYearData = applyAnalysisPeriod(allData.filter(d => d.year == year - 1 && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)'));
   const container = document.getElementById('analysisContainer');
 
   // ===== Pre-calculate all analysis data =====
 
   // 1. Trend: 3-year comparison
-  const twoYearsAgoData = allData.filter(d => d.year == year - 2 && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)');
+  const twoYearsAgoData = applyAnalysisPeriod(allData.filter(d => d.year == year - 2 && d.auditCategory === 'branch' && getScoringMethod(d.type) === 'grade' && d.region !== '협력사(본사)'));
   const stationsTwoYearsAgo = {};
   twoYearsAgoData.filter(d => d.type === 'branch').forEach(d => {
     stationsTwoYearsAgo[d.station] = calculateScores(d.scores, getChecklist('branch')).overallAverage;
@@ -8864,11 +9258,11 @@ function switchAnalysisSubTab(tab) {
 function renderDivisionAnalysis() {
   const year = parseInt(document.getElementById('analysisYear')?.value || new Date().getFullYear());
   const divData = allData.filter(d => d.auditCategory === 'division');
-  const yearData = divData.filter(d => d.year == year);
+  const yearData = applyAnalysisPeriod(divData.filter(d => d.year == year));
 
   let html = '';
   html += `<div class="flex items-center gap-3 mb-4">`;
-  html += `<span style="font-size:13px;color:#9EA2A1;">${year}년 · 실/본부 심사 분석</span>`;
+  html += `<span style="font-size:13px;color:#9EA2A1;">${analysisPeriodLabel()} · 실/본부 심사 분석</span>`;
   html += `</div>`;
 
   if (yearData.length === 0) {
@@ -8938,39 +9332,95 @@ function toggleDivAnalysisDetail(id) {
   }
 }
 
-// v19.27.7: 실/본부 부적합(U) 항목 디테일 — 부서·점검표별 U 항목 목록 + 부적합 차트
+// v19.29.1: 실/본부 부적합(U) 취약 항목 분석 — 지점 취약항목과 동일한 카테고리→항목 드릴다운 (적합률 기준)
 function renderDivNciDetail(data) {
   const box = document.getElementById('divNciInner');
   if (!box) return;
   const { yearData, year } = data;
   const typeLbl = (t) => { const r = CHECKLIST_REGISTRY[t]; return r ? r.name.replace('품질심사', '품질').replace('안전감사', '안전').replace('비행안전문서시스템', 'FSDS') : t; };
-  const byDiv = {};
-  let total = 0;
+
+  // 전년(같은 기간) 실/본부 부적합 항목 집합 → 재발 판정
+  const prevU = new Set();
+  applyAnalysisPeriod(allData.filter(d => d.auditCategory === 'division' && d.year == year - 1)).forEach(d => {
+    const cl = getChecklist(d.type);
+    for (const [, cd] of Object.entries(cl)) {
+      (cd.items || []).forEach(it => {
+        const v = d.scores ? d.scores[it.id] : null;
+        if (v === 'U' || v === 'NO' || v === 'N') prevU.add(d.type + '|' + it.id);
+      });
+    }
+  });
+
+  // 카테고리(점검표 유형별)·항목별 적합률 집계 (S=적합 / U=부적합, NA 제외)
+  const catAgg = {}; // key: type|||cat
+  let totalU = 0;
   yearData.forEach(d => {
     const div = d.division || d.station;
     const cl = getChecklist(d.type);
-    const us = [];
-    for (const [cat, cd] of Object.entries(cl)) {
+    for (const [catName, cd] of Object.entries(cl)) {
+      const ckey = d.type + '|||' + catName;
+      if (!catAgg[ckey]) catAgg[ckey] = { type: d.type, cat: catName, s: 0, u: 0, items: {} };
       (cd.items || []).forEach(it => {
         const v = d.scores ? d.scores[it.id] : null;
-        if (v === 'U' || v === 'NO' || v === 'N') us.push({ cat, id: it.id, text: it.text || '', type: d.type });
+        const it0 = catAgg[ckey].items[it.id] || (catAgg[ckey].items[it.id] = { id: it.id, text: it.text || '', s: 0, u: 0, uDivs: [] });
+        if (v === 'S' || v === 'YES' || v === 'Y') { catAgg[ckey].s++; it0.s++; }
+        else if (v === 'U' || v === 'NO' || v === 'N') { catAgg[ckey].u++; it0.u++; totalU++; it0.uDivs.push(div); }
       });
     }
-    if (us.length) { (byDiv[div] = byDiv[div] || []).push(...us); total += us.length; }
   });
-  let html = `<div class="apple-card p-6"><h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">부적합(U) 항목 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${year}년 · ${total}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">실/본부 점검표에서 부적합(U)으로 평가된 항목입니다</p>`;
+  // 적합률 계산 + 정렬 (적합률 낮은 순 = 취약한 순). 적용 항목(s+u>0) 없는 카테고리 제외.
+  const cats = Object.values(catAgg)
+    .map(c => { const ap = c.s + c.u; return Object.assign(c, { applicable: ap, rate: ap > 0 ? (c.s / ap * 100) : null }); })
+    .filter(c => c.applicable > 0)
+    .sort((a, b) => (a.rate - b.rate) || (b.u - a.u));
+
+  let html = `<div class="apple-card p-6"><h3 style="font-size:17px;font-weight:600;letter-spacing:-0.28px;color:#303A3C;margin:0 0 4px;">부적합(U) 취약 항목 분석 <span style="color:#9EA2A1;font-weight:500;font-size:13px;">${analysisPeriodLabel()} · 부적합 ${totalU}건</span></h3><p style="font-size:13px;color:#9EA2A1;margin:0 0 14px;">점검표 카테고리를 클릭하면 항목별 적합률·부적합 부서를 확인할 수 있습니다 (적합률 낮은 순)</p>`;
   html += `<div style="margin-bottom:16px;"><div style="font-size:13px;color:#565A5B;margin-bottom:6px;font-weight:600;">부서별 부적합 건수</div><div style="position:relative;height:220px;"><canvas id="divRiskChart"></canvas></div></div>`;
-  if (!total) {
-    html += `<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:24px;">부적합(U) 항목이 없습니다.</div>`;
+
+  if (!cats.length) {
+    html += `<div style="color:#9EA2A1;font-size:14px;text-align:center;padding:24px;">집계할 점검 데이터가 없습니다.</div>`;
   } else {
-    Object.keys(byDiv).forEach(div => {
-      html += `<div style="font-size:14px;font-weight:600;color:#303A3C;margin:14px 0 6px;">${_esc(div)} <span style="font-size:12px;color:#F59E0B;font-weight:500;">${byDiv[div].length}건</span></div>`;
-      byDiv[div].forEach(u => {
-        html += `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid rgba(192,206,209,0.25);">`
-          + `<span style="flex-shrink:0;font-size:11px;font-weight:600;color:#0067C4;min-width:48px;">${_esc(typeLbl(u.type))}</span>`
-          + `<span style="flex-shrink:0;font-size:11px;color:#9EA2A1;">${_esc(u.id)}</span>`
-          + `<span style="font-size:13px;color:#303A3C;flex:1;min-width:0;">${_esc(u.text)}</span></div>`;
+    const lowestRate = cats[0].rate;
+    cats.forEach((c, ci) => {
+      const color = c.rate >= 90 ? '#22C55E' : c.rate >= 70 ? '#F59E0B' : '#D20015';
+      const isWeakest = c.rate === lowestRate && c.rate < 90;
+      const alertBadge = isWeakest ? '<span class="badge-pill" style="background:rgba(210,0,21,0.15);color:#D20015;margin-left:8px;">주의</span>' : '';
+      html += `<div class="apple-card mb-3" style="padding:14px;cursor:pointer;transition:all 0.15s ease;${isWeakest ? 'border-left:3px solid #D20015;' : ''}" onclick="toggleWeakDetail('divWeakDetail_${ci}',this)">`;
+      // 카테고리 헤더
+      html += `<div class="flex justify-between items-center">`;
+      html += `<div style="flex:1;min-width:0;"><span style="font-size:11px;font-weight:600;color:#0067C4;margin-right:6px;">${_esc(typeLbl(c.type))}</span><span style="font-size:13px;font-weight:600;color:#303A3C;">${_esc(c.cat)}</span>${alertBadge}</div>`;
+      html += `<div class="flex items-center gap-3">`;
+      html += `<div style="display:flex;align-items:center;gap:6px;">`;
+      html += `<div style="width:80px;background:#f9f9fb;border-radius:4px;height:6px;"><div style="height:6px;border-radius:4px;width:${c.rate.toFixed(0)}%;background:${color};"></div></div>`;
+      html += `<span style="font-size:14px;font-weight:600;color:${color};min-width:44px;text-align:right;">${c.rate.toFixed(0)}%</span>`;
+      html += `</div>`;
+      html += `<svg class="w-4 h-4" style="color:#9EA2A1;transition:transform 0.2s;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>`;
+      html += `</div></div>`;
+      // 요약 (적합/부적합 건수)
+      html += `<div class="flex gap-4 mt-2" style="font-size:11px;color:#9EA2A1;">`
+        + `<span>적합 <strong style="color:#303A3C;">${c.s}</strong></span>`
+        + `<span>부적합 <strong style="color:${c.u ? '#D20015' : '#303A3C'};">${c.u}</strong></span></div>`;
+      // 항목 드릴다운 (적합률 낮은 순)
+      const items = Object.values(c.items).map(it => { const ap = it.s + it.u; return Object.assign(it, { applicable: ap, rate: ap > 0 ? (it.s / ap * 100) : null }); })
+        .filter(it => it.applicable > 0).sort((a, b) => (a.rate - b.rate) || (b.u - a.u));
+      html += `<div id="divWeakDetail_${ci}" class="hidden" style="margin-top:12px;border-top:1px solid rgba(192,206,209,0.3);padding-top:12px;">`;
+      html += `<div style="font-size:12px;font-weight:600;color:#9EA2A1;margin-bottom:8px;">항목별 적합률 (낮은 순)</div>`;
+      items.forEach(it => {
+        const icolor = it.rate >= 90 ? '#22C55E' : it.rate >= 70 ? '#F59E0B' : '#D20015';
+        const recur = prevU.has(c.type + '|' + it.id);
+        html += `<div style="padding:6px 0;border-bottom:1px solid rgba(192,206,209,0.1);">`;
+        html += `<div class="flex justify-between items-center">`;
+        html += `<span style="font-size:12px;color:#303A3C;flex:1;word-break:keep-all;min-width:0;"><strong>${_esc(it.id)}</strong> ${_esc(it.text)}${recur ? ' <span style="font-size:10px;color:#D20015;font-weight:700;">[재발]</span>' : ''}</span>`;
+        html += `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">`;
+        html += `<div style="width:50px;background:#f9f9fb;border-radius:3px;height:4px;"><div style="height:4px;border-radius:3px;width:${it.rate.toFixed(0)}%;background:${icolor};"></div></div>`;
+        html += `<span style="font-size:12px;font-weight:600;color:${icolor};min-width:38px;text-align:right;">${it.rate.toFixed(0)}%</span>`;
+        html += `</div></div>`;
+        if (it.uDivs.length) {
+          html += `<div style="font-size:11px;color:#D20015;margin-top:2px;padding-left:4px;">▸ 부적합: ${it.uDivs.map(_esc).join(', ')}</div>`;
+        }
+        html += `</div>`;
       });
+      html += `</div></div>`;
     });
   }
   html += `</div>`;
@@ -9028,11 +9478,11 @@ function renderDivRateDetail(data) {
 function renderOutsourcingAnalysis() {
   const year = parseInt(document.getElementById('analysisYear')?.value || new Date().getFullYear());
   const outData = allData.filter(d => d.auditCategory === 'outsourcing');
-  const yearData = outData.filter(d => d.year == year);
+  const yearData = applyAnalysisPeriod(outData.filter(d => d.year == year));
 
   let html = '';
   html += `<div class="flex items-center gap-3 mb-4">`;
-  html += `<span style="font-size:13px;color:#9EA2A1;">${year}년 · 외주협력업체 분석</span>`;
+  html += `<span style="font-size:13px;color:#9EA2A1;">${analysisPeriodLabel()} · 외주협력업체 분석</span>`;
   html += `</div>`;
 
   if (yearData.length === 0) {
@@ -16984,7 +17434,7 @@ Object.assign(window, {
   navigateToInput, renderScoreView,
   // Stats tab
   switchStatsSubTab, renderStatsDashboard, toggleWeakDetail,
-  renderOverviewStats, onStatsPeriodSelChange,
+  renderOverviewStats, onStatsPeriodSelChange, onAnalysisPeriodSelChange, renderPeriodReport, copyPeriodReport,
   // Analysis tab
   switchAnalysisSubTab, renderAnalysis, renderMaturityResultList, toggleAnalysisDetail, closeAnalysisModal, switchInsightSegment, updateInsightSegment, switchCheckSegment, updateCheckSegment,
   // Schedule tab
