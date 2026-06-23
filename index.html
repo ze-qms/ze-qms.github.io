@@ -702,6 +702,32 @@ select.apple-input {
 }
 .sd-download-item:hover { background:rgba(210,0,21,0.08); color:#D20015; }
 .sd-download-item:disabled { color:#C0CED1; cursor:wait; }
+/* 상세 페이지 연도 선택 드롭다운 (v19.30.0) */
+.sd-year-picker { position:relative; display:inline-block; vertical-align:baseline; }
+.sd-year-chip {
+  display:inline-flex; align-items:center; gap:3px;
+  background:rgba(210,0,21,0.06); color:#D20015; font-weight:600;
+  border:1px solid rgba(210,0,21,0.18); border-radius:6px;
+  padding:1px 7px; font-size:inherit; line-height:1.4; cursor:pointer;
+  transition:background 0.15s;
+}
+.sd-year-chip:hover { background:rgba(210,0,21,0.12); }
+.sd-year-chip svg { transition:transform 0.15s; }
+.sd-year-picker.open .sd-year-chip svg { transform:rotate(180deg); }
+.sd-year-menu {
+  display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:60;
+  background:#fff; border:1px solid #E5E9EC; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:4px; min-width:96px;
+  max-height:240px; overflow:auto;
+}
+.sd-year-menu.open { display:block; }
+.sd-year-opt {
+  display:block; width:100%; text-align:left; background:none; border:none;
+  padding:7px 12px; font-size:13px; color:#303A3C; border-radius:6px;
+  cursor:pointer; white-space:nowrap; transition:background 0.1s;
+}
+.sd-year-opt:hover { background:#F4F6F8; }
+.sd-year-opt.sel { color:#D20015; font-weight:700; background:rgba(210,0,21,0.06); }
 </style>
 </head>
 <body class="min-h-screen flex flex-col" style="background:#f9f9fb;">
@@ -1566,7 +1592,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.16.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.30.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1740,7 +1766,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.29.4',
+  version: '19.30.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -12464,8 +12490,8 @@ function renderHome() {
         const style = totalRate >= 90 ? 'background:rgba(34,197,94,0.15);color:#22C55E' : totalRate >= 70 ? 'background:rgba(245,158,11,0.15);color:#F59E0B' : 'background:rgba(210,0,21,0.15);color:#D20015';
         scoreBadge = `<span class="badge-pill" style="${style}">${totalRate.toFixed(0)}%</span>`;
       } else {
-        // 지점 심사 (또는 혼합): 평균점수 표시
-        const gradeRecords = stationRecords.filter(d => getScoringMethod(d.type) !== 'binary');
+        // 지점 심사 (또는 혼합): 평균점수 표시 — v19.30.1: VOC 등 모니터링 점검표는 종합 평균서 제외
+        const gradeRecords = stationRecords.filter(d => getScoringMethod(d.type) !== 'binary' && !MONITORING_BRANCH_TYPES.includes(d.type));
         if (gradeRecords.length > 0) {
           const avg = gradeRecords.reduce((s, d) => s + calculateScores(d.scores, getChecklist(d.type)).overallAverage, 0) / gradeRecords.length;
           scoreBadge = `<span class="badge-pill" style="${avgBadgeStyle(avg)}">${avg.toFixed(2)}</span>`;
@@ -12651,7 +12677,8 @@ function renderHomeMySchedule(currentYear) {
       const records = allData.filter(d =>
         d.year == currentYear &&
         (d.station === s.station || d.division === s.station) &&
-        getScoringMethod(d.type) === 'grade'
+        getScoringMethod(d.type) === 'grade' &&
+        !MONITORING_BRANCH_TYPES.includes(d.type) // v19.30.1: VOC 등 모니터링 점검표 제외
       );
       let sum = 0, cnt = 0;
       records.forEach(d => {
@@ -13295,6 +13322,62 @@ document.addEventListener('click', (e) => {
   const menu = document.getElementById('sdDownloadMenu');
   if (!menu || !menu.classList.contains('open')) return;
   if (!menu.contains(e.target)) menu.classList.remove('open');
+});
+
+// ── 상세 페이지 연도 선택 드롭다운 (v19.30.0) ──────────────────────────
+// 대상(지점/실·본부)에 데이터가 있는 연도 목록을 내림차순으로 추출
+function getDetailYears(target) {
+  if (!target || typeof allData === 'undefined') return [];
+  let recs;
+  if (typeof DIVISIONS !== 'undefined' && DIVISIONS[target]) {
+    recs = allData.filter(d => (d.station === target || d.division === target) && d.auditCategory === 'division');
+  } else {
+    recs = allData.filter(d => d.station === target);
+  }
+  const ys = Array.from(new Set(recs.map(d => Number(d.year)).filter(y => !isNaN(y))));
+  ys.sort((a, b) => b - a);
+  return ys;
+}
+
+// 부제목에 들어갈 연도 표시 HTML 생성. 데이터 연도가 2개 이상이면 드롭다운, 1개면 평문.
+function _sdYearChipHTML(year, target) {
+  const yNum = Number(year);
+  const years = getDetailYears(target);
+  if (!years.includes(yNum)) years.push(yNum);
+  years.sort((a, b) => b - a);
+  if (years.length <= 1) return `${year}년`;
+  const opts = years.map(y =>
+    `<button type="button" class="sd-year-opt${y === yNum ? ' sel' : ''}" onclick="changeDetailYear(${y})">${y}년</button>`
+  ).join('');
+  const chevron = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  return `<span class="sd-year-picker">`
+    + `<button type="button" class="sd-year-chip" onclick="toggleSdYearMenu(event)" title="연도 선택">${year}년${chevron}</button>`
+    + `<div class="sd-year-menu">${opts}</div>`
+    + `</span>`;
+}
+
+function toggleSdYearMenu(e) {
+  if (e) e.stopPropagation();
+  const picker = e.currentTarget.closest('.sd-year-picker');
+  if (!picker) return;
+  const menu = picker.querySelector('.sd-year-menu');
+  if (!menu) return;
+  const willOpen = !menu.classList.contains('open');
+  document.querySelectorAll('.sd-year-picker.open').forEach(p => { p.classList.remove('open'); p.querySelector('.sd-year-menu')?.classList.remove('open'); });
+  if (willOpen) { menu.classList.add('open'); picker.classList.add('open'); }
+}
+
+function changeDetailYear(newYear) {
+  document.querySelectorAll('.sd-year-picker.open').forEach(p => { p.classList.remove('open'); p.querySelector('.sd-year-menu')?.classList.remove('open'); });
+  if (!stationDetailStation) return;
+  if (Number(newYear) === Number(stationDetailYear)) return;
+  openStationDetail(Number(newYear), stationDetailStation);
+}
+
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('.sd-year-picker.open').forEach(p => {
+    if (!p.contains(e.target)) { p.classList.remove('open'); p.querySelector('.sd-year-menu')?.classList.remove('open'); }
+  });
 });
 
 function getDetailFilename() {
@@ -16631,7 +16714,7 @@ function renderDivisionDetail(year, division) {
   if (!d) return;
 
   document.getElementById('sdTitle').textContent = division;
-  document.getElementById('sdSubtitle').textContent = year + '년 품질심사 · 안전감사 결과';
+  document.getElementById('sdSubtitle').innerHTML = _sdYearChipHTML(year, division) + ' 품질심사 · 안전감사 결과';
 
   const dateStr = d.dateStart && d.dateEnd ? d.dateStart + ' ~ ' + d.dateEnd : (d.dateStart || '-');
   document.getElementById('sdAuditInfo').innerHTML =
@@ -16973,7 +17056,7 @@ function renderStationDetail(year, station) {
 
   // 제목
   document.getElementById('sdTitle').textContent = `${station}`;
-  document.getElementById('sdSubtitle').textContent = `${year}년 ${d.region ? '· ' + d.region : ''} 품질심사 성숙도 평가`;
+  document.getElementById('sdSubtitle').innerHTML = _sdYearChipHTML(year, station) + ` ${d.region ? '· ' + d.region : ''} 품질심사 성숙도 평가`;
 
   // 심사 정보
   const dateStr = d.dateStart && d.dateEnd ? `${d.dateStart} ~ ${d.dateEnd}` : (d.dateStart || '-');
@@ -17473,6 +17556,8 @@ Object.assign(window, {
   clDownloadTemplate, clImportExcel,
   // Detail page download (v19.8.0)
   toggleSdDownloadMenu, downloadDetailPDF, downloadDetailHTML, copyDetailHTMLToClipboard, goToChecklistView,
+  // 상세 페이지 연도 선택 드롭다운 (v19.30.0) — inline onclick 핸들러
+  toggleSdYearMenu, changeDetailYear, getDetailYears,
   // 전자결재 결과보고 입력 패널 (v19.17.0) — inline onclick/oninput 핸들러
   saveReportDraft, saveReportDefaultsFromPanel, rdAddCarIssued, rdAddCarPrevious,
   _gtAddRow, _gtDelRow, _gtAddCol, _gtDelCol, _gtSetHeader, _gtSetCell,
