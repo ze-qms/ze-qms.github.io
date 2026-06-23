@@ -1592,7 +1592,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.30.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.30.2</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1766,7 +1766,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.30.1',
+  version: '19.30.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -13324,22 +13324,26 @@ document.addEventListener('click', (e) => {
   if (!menu.contains(e.target)) menu.classList.remove('open');
 });
 
-// ── 상세 페이지 연도 선택 드롭다운 (v19.30.0) ──────────────────────────
-// 대상(지점/실·본부)에 데이터가 있는 연도 목록을 내림차순으로 추출
+// ── 상세 페이지 연도 선택 드롭다운 (v19.30.0, v19.30.2 전체 연도화) ──────────────────────────
+// v19.30.2: 데이터 유무와 무관하게 앱 표준 연도 범위(statsYear 셀렉터와 동일, 현재연도-2~+1)를
+// 항상 제공 + 데이터가 있는 연도(범위 밖 과거 포함)도 합집합. → 데이터 없는 대상/연도여도 이동 가능.
 function getDetailYears(target) {
-  if (!target || typeof allData === 'undefined') return [];
-  let recs;
-  if (typeof DIVISIONS !== 'undefined' && DIVISIONS[target]) {
-    recs = allData.filter(d => (d.station === target || d.division === target) && d.auditCategory === 'division');
-  } else {
-    recs = allData.filter(d => d.station === target);
+  const cy = new Date().getFullYear();
+  const set = new Set();
+  for (let y = cy - 2; y <= cy + 1; y++) set.add(y); // 앱 표준 연도 범위 (statsYear와 동일)
+  if (target && typeof allData !== 'undefined') {
+    let recs;
+    if (typeof DIVISIONS !== 'undefined' && DIVISIONS[target]) {
+      recs = allData.filter(d => (d.station === target || d.division === target) && d.auditCategory === 'division');
+    } else {
+      recs = allData.filter(d => d.station === target);
+    }
+    recs.forEach(d => { const y = Number(d.year); if (!isNaN(y)) set.add(y); }); // 범위 밖 과거 데이터 포함
   }
-  const ys = Array.from(new Set(recs.map(d => Number(d.year)).filter(y => !isNaN(y))));
-  ys.sort((a, b) => b - a);
-  return ys;
+  return Array.from(set).sort((a, b) => b - a);
 }
 
-// 부제목에 들어갈 연도 표시 HTML 생성. 데이터 연도가 2개 이상이면 드롭다운, 1개면 평문.
+// 부제목에 들어갈 연도 표시 HTML 생성. v19.30.2: 항상 드롭다운(연도 범위 전체 이동 가능).
 function _sdYearChipHTML(year, target) {
   const yNum = Number(year);
   const years = getDetailYears(target);
