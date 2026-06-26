@@ -1592,7 +1592,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.31.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.31.2</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1766,7 +1766,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.31.1',
+  version: '19.31.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -13420,6 +13420,11 @@ function openStationDetail(year, station, _fromPopstate) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   renderStationDetail(year, station);
   try { injectReportDraftPanel(year, station); } catch(e) { console.warn('injectReportDraftPanel failed:', e); }
+  // v19.31.2: CAR 편집 연필 버튼은 배정 심사원 + admin만 노출 (클릭 가드는 toggleCarEdit에 별도 존재)
+  try {
+    const _carEditable = canEditAssessment(year, station);
+    document.querySelectorAll('#sdCarEditBtn').forEach(b => { b.style.display = _carEditable ? '' : 'none'; });
+  } catch(e) {}
 }
 
 function closeStationDetail() {
@@ -14164,11 +14169,18 @@ function injectReportDraftPanel(year, key){
   const existing = document.getElementById('sdReportPanel');
   if (existing) existing.remove();
   if (!currentUser) return; // 비로그인 시 미표시
+  // v19.31.2: 결과보고 패널은 배정 심사원 + admin만 (작성/수정 규칙 동일 적용)
+  if (!canEditAssessment(year, key)) return;
   root.insertAdjacentHTML('beforeend', _reportPanelHTML(year, key));
 }
 
 function saveReportDraft(){
   if (!requireRole('auditor')) return;
+  // v19.31.2: 배정 심사원 + admin만 결과보고 저장 가능
+  if (!canEditAssessment(stationDetailYear, stationDetailStation)) {
+    showToast(assignmentDeniedMessage(stationDetailYear, stationDetailStation), 'error');
+    return;
+  }
   const year = stationDetailYear, key = stationDetailStation;
   const g = id => document.getElementById(id);
   const carIssued = Array.from(document.querySelectorAll('#rdCarIssuedRows tr')).map(tr => {
@@ -16507,6 +16519,11 @@ function toggleCarEdit() {
   const editArea = document.getElementById('sdCarEditArea');
   const extra = document.getElementById('sdCarExtra');
   const isEditing = !editArea.classList.contains('hidden');
+  // v19.31.2: CAR 편집 진입은 배정 심사원 + admin만 (편집 종료/취소는 항상 허용)
+  if (!isEditing && !canEditAssessment(stationDetailYear, stationDetailStation)) {
+    showToast(assignmentDeniedMessage(stationDetailYear, stationDetailStation), 'error');
+    return;
+  }
   if (isEditing) {
     editArea.classList.add('hidden');
     chartArea.classList.remove('hidden');
@@ -16578,6 +16595,11 @@ function carRemoveItemRow(idx) {
   renderCarEditorRows();
 }
 function saveCarItemsFromInputs() {
+  // v19.31.2: 배정 심사원 + admin만 CAR 저장 가능
+  if (!canEditAssessment(stationDetailYear, stationDetailStation)) {
+    showToast(assignmentDeniedMessage(stationDetailYear, stationDetailStation), 'error');
+    return;
+  }
   _carSyncEditorFromDom();
   const items = carEditItems.filter(Boolean);
   // 제목 미입력 항목 차단 — 첫 미입력 행으로 스크롤·강조
