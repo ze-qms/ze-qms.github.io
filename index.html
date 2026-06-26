@@ -3444,7 +3444,7 @@ async function initFirebase() {
           }
         }
         if (userData) {
-          currentUser = { uid: user.uid, empNo: emailToEmpNo(user.email), name: userData.name, role: userData.role };
+          currentUser = { uid: user.uid, empNo: emailToEmpNo(user.email), name: userData.name, role: userData.role, scope: userData.scope || 'all' };
           window._myAuditorProfile = undefined; // v17.2.0: 캐시 초기화
           // v19.11.12: auth 성공 후 listener 등록 (이전엔 init 시점에 등록되어 auth=null로 cancel됨)
           if (!_listenersAttached) {
@@ -4118,6 +4118,38 @@ function requireRole(minRole) {
   return true;
 }
 
+// v19.31.0: 데이터 범위(scope) — 실/본부(division) 노출 여부.
+// scope 'transport'(운송본부)는 division 데이터를 모든 화면에서 숨김. 미설정/기타는 'all'(전체 노출).
+function canSeeDivision() {
+  if (!currentUser) return false;
+  return (currentUser.scope || 'all') !== 'transport';
+}
+// 집계/렌더 진입점 표준 데이터 소스. division을 못 보는 사용자는 division 레코드 제거된 배열을 받음.
+function scopedData() {
+  if (canSeeDivision()) return allData;
+  return allData.filter(d => d.auditCategory !== 'division');
+}
+// 일정(scheduleData) 표준 소스. division을 못 보는 사용자는 실/본부 일정 제거.
+function scopedSchedule() {
+  if (canSeeDivision()) return scheduleData;
+  return scheduleData.filter(s => s.auditTarget !== 'division' && !(typeof DIVISIONS !== 'undefined' && DIVISIONS[s.station]));
+}
+// v19.31.0: scope에 따라 division 전용 UI 요소(입력 카테고리 버튼/통계·분석 서브탭/조회 옵션) 숨김.
+function applyScopePermissions() {
+  const showDiv = canSeeDivision();
+  const ids = ['catBtnDivision', 'viewCatBtnDivision', 'statsSubDivision', 'analysisSubDivision'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = showDiv ? '' : 'none';
+  });
+  // 점수조회 심사유형 드롭다운의 '실/본부' 옵션 토글
+  const vt = document.getElementById('viewType');
+  if (vt) {
+    const opt = Array.from(vt.options).find(o => o.value === 'division');
+    if (opt) opt.style.display = showDiv ? '' : 'none';
+  }
+}
+
 function applyRolePermissions(role) {
   // 탭 표시/숨김
   const tabButtons = document.querySelectorAll('.desktop-tab');
@@ -4130,6 +4162,8 @@ function applyRolePermissions(role) {
   // v18.0.0: 모바일 톱니바퀴 — admin만 표시
   const gearBtn = document.getElementById('mobileGearBtn');
   if (gearBtn) gearBtn.style.display = (role === 'admin') ? '' : 'none';
+  // v19.31.0: 데이터 범위 기반 UI 게이팅
+  applyScopePermissions();
 }
 
 // 관리 탭: 사용자 관리 섹션 렌더링
@@ -4160,6 +4194,15 @@ async function renderUserManagement() {
         html += `<option value="${r}" ${u.role===r?'selected':''}>${r==='admin'?'관리자':r==='auditor'?'심사원':'뷰어'}</option>`;
       });
       html += `</select></div>`;
+      // v19.31.0: 데이터 범위(scope) — 운송본부는 실/본부 데이터 비노출
+      const uScope = u.scope || 'all';
+      html += `<div class="flex items-center gap-2" style="margin-top:6px;">`;
+      html += `<span style="font-size:12px;color:#565A5B;">범위:</span>`;
+      html += `<select onchange="changeUserScope('${uid}',this.value)" class="apple-input" style="padding:4px 10px;font-size:12px;flex:1;max-width:140px;" ${isSelf?'disabled':''}>`;
+      [['all','전체(안전보안실)'],['transport','운송본부(지점만)']].forEach(([sv,sl]) => {
+        html += `<option value="${sv}" ${uScope===sv?'selected':''}>${sl}</option>`;
+      });
+      html += `</select></div>`;
       html += `</div>`;
     }
     html += '</div>';
@@ -4171,6 +4214,7 @@ async function renderUserManagement() {
     html += `<div><label class="apple-label">사번</label><input id="newUserEmpNo" type="text" inputmode="numeric" maxlength="7" placeholder="7자리" class="apple-input"></div>`;
     html += `<div><label class="apple-label">이름</label><input id="newUserName" type="text" placeholder="이름" class="apple-input"></div>`;
     html += `<div><label class="apple-label">역할</label><select id="newUserRole" class="apple-input"><option value="auditor">심사원</option><option value="viewer">뷰어</option><option value="admin">관리자</option></select></div>`;
+    html += `<div><label class="apple-label">범위</label><select id="newUserScope" class="apple-input"><option value="all">전체(안전보안실)</option><option value="transport">운송본부(지점만)</option></select></div>`;
     html += `<div><label class="apple-label">관리자 비밀번호</label><input id="newUserAdminPw" type="password" placeholder="본인 비밀번호" class="apple-input"></div>`;
     html += `<div style="display:flex;align-items:flex-end;"><button onclick="createNewUser()" class="pill-btn pill-btn-primary" style="width:100%;">추가</button></div>`;
     html += `</div>`;
@@ -4185,6 +4229,8 @@ async function createNewUser() {
   const empNo = document.getElementById('newUserEmpNo').value.trim();
   const name = document.getElementById('newUserName').value.trim();
   const role = document.getElementById('newUserRole').value;
+  const scopeEl = document.getElementById('newUserScope');
+  const scope = scopeEl ? scopeEl.value : 'all';
   const resultEl = document.getElementById('newUserResult');
   if (!empNo || empNo.length !== 7) { resultEl.innerHTML = '<span style="color:#D20015;">사번 7자리를 입력해주세요.</span>'; return; }
   if (!name) { resultEl.innerHTML = '<span style="color:#D20015;">이름을 입력해주세요.</span>'; return; }
@@ -4217,7 +4263,7 @@ async function createNewUser() {
 
     // 3. RTDB users/{uid} 레코드 작성 — 메인 db ref(admin 권한)로 작성
     await dbRef('users/' + cred.user.uid).set({
-      empNo, name, role, createdAt: new Date().toISOString().slice(0,10), mustChangePassword: true
+      empNo, name, role, scope, createdAt: new Date().toISOString().slice(0,10), mustChangePassword: true
     });
 
     // 4. 보조 app 정리 (sign out + delete)
@@ -4250,6 +4296,15 @@ async function changeUserRole(uid, newRole) {
     await dbRef('users/' + uid + '/role').set(newRole);
     showToast('역할이 변경되었습니다.', 'success');
   } catch(e) { showToast('역할 변경 실패', 'error'); }
+}
+
+// v19.31.0: 데이터 범위(scope) 변경 — all(전체) / transport(운송본부, 실/본부 비노출)
+async function changeUserScope(uid, newScope) {
+  if (!requireRole('admin')) return;
+  try {
+    await dbRef('users/' + uid + '/scope').set(newScope);
+    showToast('데이터 범위가 변경되었습니다. (대상 사용자 재로그인 후 적용)', 'success');
+  } catch(e) { showToast('범위 변경 실패', 'error'); }
 }
 
 async function deleteUser(uid, empNo) {
@@ -4960,8 +5015,8 @@ function populateInputTargetDropdown() {
     }
     sel.appendChild(osGroup);
   }
-  // 실/본부 (all 또는 division)
-  if (cat === 'all' || cat === 'division') {
+  // 실/본부 (all 또는 division) — v19.31.0: 운송본부 사용자는 전체 모드에서도 제외
+  if ((cat === 'all' || cat === 'division') && canSeeDivision()) {
     const divGroup = document.createElement('optgroup');
     divGroup.label = '실/본부';
     for (const divName of DIVISION_NAMES) {
@@ -5033,6 +5088,8 @@ function inputGoHome() {
 
 
 function switchAuditCategory(cat) {
+  // v19.31.0: 운송본부 사용자는 실/본부 카테고리 진입 차단
+  if (cat === 'division' && !canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); return; }
   selectedAuditCategory = cat;
   const allBtn = document.getElementById('catBtnAll');
   const branchBtn = document.getElementById('catBtnBranch');
@@ -5067,6 +5124,8 @@ function inputSearch() {
 
   // Determine category from selected value
   if (DIVISION_NAMES.includes(targetVal)) {
+    // v19.31.0: 운송본부 사용자는 실/본부 대상 선택 차단 (드롭다운 우회 방지)
+    if (!canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); return; }
     selectedAuditCategory = 'division';
     selectedDivision = targetVal;
     selectedStation = targetVal;
@@ -5825,8 +5884,8 @@ function populateViewTargetDropdown() {
     }
     sel.appendChild(osGroup);
   }
-  // 실/본부 (all 또는 division)
-  if (cat === 'all' || cat === 'division') {
+  // 실/본부 (all 또는 division) — v19.31.0: 운송본부 사용자는 전체 모드에서도 제외
+  if ((cat === 'all' || cat === 'division') && canSeeDivision()) {
     const divGroup = document.createElement('optgroup');
     divGroup.label = '실/본부';
     for (const divName of DIVISION_NAMES) {
@@ -5844,6 +5903,8 @@ function populateViewTargetDropdown() {
 function populateViewStationDropdown() { populateViewTargetDropdown(); }
 
 function switchViewCategory(cat) {
+  // v19.31.0: 운송본부 사용자는 실/본부 조회 카테고리 진입 차단
+  if (cat === 'division' && !canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); return; }
   selectedViewCategory = cat;
   const allBtn = document.getElementById('viewCatBtnAll');
   const branchBtn = document.getElementById('viewCatBtnBranch');
@@ -5920,7 +5981,8 @@ function viewSearch() {
 
   // Determine which target categories to show
   const showBranch = categoryFilter === '전체' || categoryFilter === 'branch';
-  const showDivision = categoryFilter === '전체' || categoryFilter === 'division';
+  // v19.31.0: 운송본부 사용자는 실/본부 결과 제외
+  const showDivision = (categoryFilter === '전체' || categoryFilter === 'division') && canSeeDivision();
   const showOutsourcing = categoryFilter === '전체' || categoryFilter === 'outsourcing';
 
   // BRANCH STATIONS
@@ -7035,7 +7097,8 @@ function renderOverviewStats() {
   if (!box) return;
   try {
     const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
-    const scoped = applyStatsPeriod(allData.filter(d => d.year == year && !d.partial)); // v19.28.0: 작성 중 제외
+    // v19.31.0: scopedData()로 운송본부 사용자에겐 실/본부 제외 → 종합이 지점(+외주)만으로 재계산
+    const scoped = applyStatsPeriod(scopedData().filter(d => d.year == year && !d.partial)); // v19.28.0: 작성 중 제외
     const periodLbl = statsPeriodLabel();
 
     // 완료 집합 3종 (renderHome 패턴)
@@ -7081,11 +7144,13 @@ function renderOverviewStats() {
       + `<div style="font-size:12px;color:#565A5B;margin-top:4px;">${sub}</div></div>`;
 
     let html = '';
+    // v19.31.0: 운송본부 사용자는 실/본부 카드 제외 + 합산 라벨 조정
+    const _showDiv = canSeeDivision();
     html += `<div class="flex items-center gap-3 mb-4"><span style="font-size:13px;color:#9EA2A1;">${periodLbl} · 전 심사대상 종합 · 완료 ${completedAll.size}곳</span></div>`;
     html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">`
-      + card('완료 심사대상', completedAll.size, '곳', '지점·실본부·외주 합산')
+      + card('완료 심사대상', completedAll.size, '곳', _showDiv ? '지점·실본부·외주 합산' : '지점·외주 합산')
       + card('지점', completedStations.size, '곳', '평균 ' + (brAvg != null ? brAvg.toFixed(2) + '점' : '-'))
-      + card('실/본부', completedDivisions.size, '곳', '적합률 ' + (dvAvg != null ? dvAvg.toFixed(1) + '%' : '-'))
+      + (_showDiv ? card('실/본부', completedDivisions.size, '곳', '적합률 ' + (dvAvg != null ? dvAvg.toFixed(1) + '%' : '-')) : '')
       + card('외주협력업체', completedOutsourcing.size, '곳', '적합률 ' + (osAvg != null ? osAvg.toFixed(1) + '%' : '-'))
       + `</div>`;
 
@@ -7165,7 +7230,7 @@ function renderOverviewStats() {
 
     // 유형별 섹션 (기본 접힘)
     html += _ovSection('지점', 'ov_branch', [...completedStations], byName, year);
-    html += _ovSection('실/본부', 'ov_division', [...completedDivisions], byName, year);
+    if (_showDiv) html += _ovSection('실/본부', 'ov_division', [...completedDivisions], byName, year); // v19.31.0
     html += _ovSection('외주협력업체', 'ov_outsourcing', [...completedOutsourcing], byName, year);
 
     // 통합 완료 리스트 (심사일 내림차순)
@@ -7323,8 +7388,9 @@ function renderPeriodReport() {
     const periodLbl = statsPeriodLabel();
     const prev = _prevPeriodOf(year);
 
-    const scoped = applyStatsPeriod(allData.filter(d => d.year == year && !d.partial));
-    const prevScoped = allData.filter(d => d.year == prev.year && !d.partial && _periodMatch(d, prev.mode, prev.quarter, prev.month));
+    // v19.31.0: scopedData()로 운송본부 사용자에겐 실/본부 제외 → 지점(+외주)만으로 재계산
+    const scoped = applyStatsPeriod(scopedData().filter(d => d.year == year && !d.partial));
+    const prevScoped = scopedData().filter(d => d.year == prev.year && !d.partial && _periodMatch(d, prev.mode, prev.quarter, prev.month));
 
     // 유형별 분류
     const isBranch = d => d.auditCategory === 'branch' && d.region !== '협력사(본사)';
@@ -7401,7 +7467,8 @@ function renderPeriodReport() {
     html += kpiCard('지점 평균 성숙도', matCur != null ? matCur.toFixed(2) : '<span style="font-size:16px;color:#C0CED1;">-</span>', matCur != null ? _prDelta(matCur, matPre, 2, '', false) : '', matCur != null ? avgColor(matCur) : '#C0CED1');
     const compShow = divCur != null ? divCur : outCur;
     const compPrev = divCur != null ? divPre : outPre;
-    html += kpiCard('실/본부·외주 적합률', compShow != null ? compShow.toFixed(0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>', compShow != null ? _prDelta(compShow, compPrev, 0, '%p', false) : '', '#0067C4');
+    const _compLabel = canSeeDivision() ? '실/본부·외주 적합률' : '외주 적합률'; // v19.31.0
+    html += kpiCard(_compLabel, compShow != null ? compShow.toFixed(0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>', compShow != null ? _prDelta(compShow, compPrev, 0, '%p', false) : '', '#0067C4');
     html += kpiCard('CAR 발행', `${carItems.length}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(carItems.length, prevCarCount, 0, '건', true), '#D20015');
     html += `</div>`;
 
@@ -7423,7 +7490,7 @@ function renderPeriodReport() {
     }
     html += `<div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;padding-top:14px;border-top:1px solid rgba(192,206,209,0.3);">`
       + `<div style="font-size:13px;color:#565A5B;">지점 <b style="color:#303A3C;">${cur.branch.size}</b></div>`
-      + `<div style="font-size:13px;color:#565A5B;">실/본부 <b style="color:#303A3C;">${cur.division.size}</b></div>`
+      + (canSeeDivision() ? `<div style="font-size:13px;color:#565A5B;">실/본부 <b style="color:#303A3C;">${cur.division.size}</b></div>` : '') // v19.31.0
       + `<div style="font-size:13px;color:#565A5B;">외주 <b style="color:#303A3C;">${cur.outsourcing.size}</b></div></div>`;
     html += `</div>`;
 
@@ -7491,9 +7558,10 @@ function renderPeriodReport() {
     txt.push(`(직전 ${prev.label} 대비 / 작성 중 제외)`);
     txt.push('');
     txt.push(`■ 핵심 지표`);
-    txt.push(`- 완료 심사: ${curDone}건 (지점 ${cur.branch.size} · 실/본부 ${cur.division.size} · 외주 ${cur.outsourcing.size})`);
+    // v19.31.0: 운송본부 사용자는 실/본부 제외 텍스트
+    txt.push(`- 완료 심사: ${curDone}건 (지점 ${cur.branch.size}${canSeeDivision() ? ' · 실/본부 ' + cur.division.size : ''} · 외주 ${cur.outsourcing.size})`);
     if (matCur != null) txt.push(`- 지점 평균 성숙도: ${matCur.toFixed(2)}`);
-    if (compShow != null) txt.push(`- 실/본부·외주 평균 적합률: ${compShow.toFixed(0)}%`);
+    if (compShow != null) txt.push(`- ${_compLabel} 평균: ${compShow.toFixed(0)}%`);
     txt.push(`- CAR 발행: ${carItems.length}건 (Class1 ${clsCount.class1 || 0} · Class2 ${clsCount.class2 || 0} · Concern ${clsCount.concern || 0})`);
     txt.push('');
     if (planTotal) txt.push(`■ 진척: 계획 ${planTotal} / 완료 ${statusTally.completed} · 진행 중 ${statusTally.in_progress} · 예정 ${statusTally.planned} · 지연/미완료 ${statusTally.delayed}`);
@@ -7533,6 +7601,8 @@ function copyPeriodReport() {
 
 function renderStatsDashboard() {
   if (typeof statsSubTab === 'undefined') window.statsSubTab = 'overview';
+  // v19.31.0: 운송본부 사용자가 실/본부 통계에 머무르면 종합으로 폴백
+  if (statsSubTab === 'division' && !canSeeDivision()) window.statsSubTab = 'overview';
   if (statsSubTab === 'overview') { renderOverviewStats(); return; }
   if (statsSubTab === 'periodReport') { renderPeriodReport(); return; }
   if (statsSubTab === 'division') { renderDivisionStats(); return; }
@@ -7940,6 +8010,8 @@ function toggleSection(sectionId) {
 }
 
 function switchStatsSubTab(tab) {
+  // v19.31.0: 운송본부 사용자가 실/본부 서브탭에 도달하면 종합으로 폴백
+  if (tab === 'division' && !canSeeDivision()) tab = 'overview';
   window.statsSubTab = tab;
   const tabs = ['overview', 'periodReport', 'branch', 'division', 'outsourcing', 'auditor'];
   tabs.forEach(t => {
@@ -7953,6 +8025,7 @@ function switchStatsSubTab(tab) {
 }
 
 function renderDivisionStats() {
+  if (!canSeeDivision()) return; // v19.31.0: 운송본부 사용자 차단
   const year = parseInt(document.getElementById('statsYear')?.value || new Date().getFullYear());
   const divData = applyStatsPeriod(allData.filter(d => d.auditCategory === 'division' && d.year == year && !d.partial)); // v19.28.0: 작성 중 제외
 
@@ -8529,6 +8602,8 @@ function onAnalysisPeriodSelChange() {
 
 function renderAnalysis() {
   if (typeof analysisSubTab === 'undefined') window.analysisSubTab = 'branch';
+  // v19.31.0: 운송본부 사용자가 실/본부 분석에 머무르면 지점 분석으로 폴백
+  if (analysisSubTab === 'division' && !canSeeDivision()) window.analysisSubTab = 'branch';
   if (analysisSubTab === 'maturityResult') { renderMaturityResultList(); return; }
   if (analysisSubTab === 'division') { renderDivisionAnalysis(); return; }
   if (analysisSubTab === 'outsourcing') { renderOutsourcingAnalysis(); return; }
@@ -9268,6 +9343,8 @@ function renderCarAnalysis(year, scope) {
 }
 
 function switchAnalysisSubTab(tab) {
+  // v19.31.0: 운송본부 사용자가 실/본부 서브탭에 도달하면 지점 분석으로 폴백
+  if (tab === 'division' && !canSeeDivision()) tab = 'branch';
   window.analysisSubTab = tab;
   const tabs = ['branch', 'maturityResult', 'division', 'outsourcing'];
   tabs.forEach(t => {
@@ -9282,6 +9359,7 @@ function switchAnalysisSubTab(tab) {
 
 // v19.27.7: 실/본부 분석 — 지점 분석과 동일한 '요약 카드 → 클릭 시 디테일' 패턴으로 재구성
 function renderDivisionAnalysis() {
+  if (!canSeeDivision()) return; // v19.31.0: 운송본부 사용자 차단
   const year = parseInt(document.getElementById('analysisYear')?.value || new Date().getFullYear());
   const divData = allData.filter(d => d.auditCategory === 'division');
   const yearData = applyAnalysisPeriod(divData.filter(d => d.year == year));
@@ -10101,10 +10179,11 @@ function renderSchedule() {
   if (typeof window._scheduleViewYear === 'undefined') window._scheduleViewYear = currentYear;
   const scheduleYear = window._scheduleViewYear;
 
-  // Group by month
+  // Group by month — v19.31.0: 운송본부 사용자는 실/본부 일정 제외
+  const _schedScoped = scopedSchedule();
   const monthMap = {};
   for (let m = 1; m <= 12; m++) monthMap[m] = [];
-  scheduleData.filter(s => s.year === scheduleYear).forEach(s => {
+  _schedScoped.filter(s => s.year === scheduleYear).forEach(s => {
     if (!monthMap[s.month]) monthMap[s.month] = [];
     monthMap[s.month].push(s);
   });
@@ -10127,11 +10206,11 @@ function renderSchedule() {
   html += '</div>';
   html += '</div>';
 
-  // Summary stats
-  const totalStations = scheduleData.filter(s => s.year === scheduleYear).length;
-  const completedCount = scheduleData.filter(s => s.year === scheduleYear && s.status === 'completed').length;
-  const inProgressCount = scheduleData.filter(s => s.year === scheduleYear && s.status === 'in_progress').length;
-  const upcomingCount = scheduleData.filter(s => s.year === scheduleYear && s.status === 'upcoming').length;
+  // Summary stats — v19.31.0: scopedSchedule 기준 (실/본부 제외분 반영)
+  const totalStations = _schedScoped.filter(s => s.year === scheduleYear).length;
+  const completedCount = _schedScoped.filter(s => s.year === scheduleYear && s.status === 'completed').length;
+  const inProgressCount = _schedScoped.filter(s => s.year === scheduleYear && s.status === 'in_progress').length;
+  const upcomingCount = _schedScoped.filter(s => s.year === scheduleYear && s.status === 'upcoming').length;
   const progressPct = totalStations > 0 ? Math.round((completedCount / totalStations) * 100) : 0;
 
   html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">';
@@ -10415,9 +10494,10 @@ function renderScheduleReorder() {
   if (typeof window._scheduleViewYear === 'undefined') window._scheduleViewYear = currentYear;
   const scheduleYear = window._scheduleViewYear;
 
+  // v19.31.0: 운송본부 사용자는 실/본부 일정 제외(드래그는 id 단위라 숨긴 일정은 scheduleData에 보존)
   const monthMap = {};
   for (let m = 1; m <= 12; m++) monthMap[m] = [];
-  scheduleData.filter(s => s.year === scheduleYear).forEach(s => {
+  scopedSchedule().filter(s => s.year === scheduleYear).forEach(s => {
     if (!monthMap[s.month]) monthMap[s.month] = [];
     monthMap[s.month].push(s);
   });
@@ -12344,7 +12424,8 @@ function goToHome() {
 
 function renderHome() {
   const currentYear = new Date().getFullYear();
-  const yearData = allData.filter(d => d.year == currentYear);
+  // v19.31.0: scopedData()로 운송본부 사용자에겐 실/본부 제외 (완료 목록·divisionData 자동 0)
+  const yearData = scopedData().filter(d => d.year == currentYear);
 
   // 진행률: scheduleData 등록 기준 (지점만, 협력사 제외) — v19.28.0: 작성 중(부분 저장) 제외
   const completedStations = new Set(yearData.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)' && !d.partial).map(d => d.station));
@@ -12389,8 +12470,12 @@ function renderHome() {
   const divAvgRate = divRateCount > 0 ? (divTotalRate / divRateCount).toFixed(0) : '-';
 
   // Summary cards — 좌: 지점 및 외주협력업체, 우: 실본부
+  // v19.31.0: 운송본부 사용자는 실·본부 컬럼 제외 + 컨테이너를 1열로 전환(가로 여백 방지)
+  const _homeShowDiv = canSeeDivision();
   const divRateColor = divAvgRate !== '-' && parseInt(divAvgRate) >= 90 ? '#22C55E' : divAvgRate !== '-' && parseInt(divAvgRate) >= 70 ? '#F59E0B' : '#303A3C';
-  document.getElementById('homeSummary').innerHTML = `
+  const _homeBox = document.getElementById('homeSummary');
+  if (_homeBox) _homeBox.className = _homeShowDiv ? 'grid grid-cols-1 md:grid-cols-2 gap-6 mb-6' : 'grid grid-cols-1 gap-6 mb-6';
+  const branchCol = `
     <div>
       <h3 style="font-size:15px;font-weight:700;color:#303A3C;margin-bottom:10px;">지점 및 외주협력업체</h3>
       <div class="grid grid-cols-2 gap-3">
@@ -12405,7 +12490,8 @@ function renderHome() {
           <div style="font-size:11px;color:#9EA2A1;margin-top:4px;">${currentYear}년 기준</div>
         </div>
       </div>
-    </div>
+    </div>`;
+  const divCol = _homeShowDiv ? `
     <div>
       <h3 style="font-size:15px;font-weight:700;color:#303A3C;margin-bottom:10px;">실·본부</h3>
       <div class="grid grid-cols-2 gap-3">
@@ -12420,8 +12506,8 @@ function renderHome() {
           <div style="font-size:11px;color:#9EA2A1;margin-top:4px;">${currentYear}년 기준</div>
         </div>
       </div>
-    </div>
-  `;
+    </div>` : '';
+  if (_homeBox) _homeBox.innerHTML = branchCol + divCol;
 
   // Quick actions
   document.getElementById('quickActions').innerHTML = `
@@ -12509,7 +12595,8 @@ function renderHome() {
 
   // Upcoming audits from scheduleData
   const currentMonth = new Date().getMonth() + 1;
-  const upcomingItems = scheduleData.filter(s => s.year === currentYear && s.month >= currentMonth && s.status !== 'completed');
+  // v19.31.0: 운송본부 사용자는 실/본부 일정 제외
+  const upcomingItems = scheduleData.filter(s => s.year === currentYear && s.month >= currentMonth && s.status !== 'completed' && (canSeeDivision() || s.auditTarget !== 'division'));
   // Group by month for display, take first 3 months
   const upcomingMonths = {};
   upcomingItems.forEach(s => {
@@ -12656,7 +12743,9 @@ function renderHomeMySchedule(currentYear) {
   const profile = getMyAuditorProfile();
   if (!profile) { el.innerHTML = ''; return; }
 
-  const mySchedules = getMySchedules(currentYear);
+  let mySchedules = getMySchedules(currentYear);
+  // v19.31.0: 운송본부 사용자는 실/본부 일정 카드 제외
+  if (!canSeeDivision()) mySchedules = mySchedules.filter(s => !DIVISIONS[s.station] && s.auditTarget !== 'division');
   if (mySchedules.length === 0) { el.innerHTML = ''; return; }
 
   const today = new Date();
@@ -12922,7 +13011,8 @@ function renderViewRecentStations() {
   const outsourcingStations = Object.values(outsourcingMap).sort((a, b) => (b.latestDate || '').localeCompare(a.latestDate || ''));
 
   const showBranch = (selectedViewCategory === 'all' || selectedViewCategory === 'branch') && branchStations.length > 0;
-  const showDivision = (selectedViewCategory === 'all' || selectedViewCategory === 'division') && divisionStations.length > 0;
+  // v19.31.0: 운송본부 사용자는 실/본부 완료 목록 제외
+  const showDivision = (selectedViewCategory === 'all' || selectedViewCategory === 'division') && divisionStations.length > 0 && canSeeDivision();
   const showOutsourcing = (selectedViewCategory === 'all' || selectedViewCategory === 'outsourcing') && outsourcingStations.length > 0;
   if (!showBranch && !showDivision && !showOutsourcing) {
     container.innerHTML = '<div class="apple-card p-6"><div style="text-align:center;color:#9EA2A1;font-size:14px;padding:20px;">' + year + '년 입력된 점검표가 없습니다.</div></div>';
@@ -13261,6 +13351,8 @@ function _carSortItems(items) {
 
 // --- Navigation ---
 function openStationDetail(year, station, _fromPopstate) {
+  // v19.31.0: 운송본부 사용자는 실/본부 상세 진입 차단 (딥링크/클릭 전 경로 방어)
+  if (DIVISIONS[station] && !canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); return; }
   stationDetailPreviousTab = activeTab;
   stationDetailYear = year;
   stationDetailStation = station;
@@ -14496,6 +14588,8 @@ function collectCarItems(year) {
     const station = key.slice(us + 1);
     _carItemsNormalize(val).forEach(it => out.push(Object.assign({}, it, { station: station, targetType: _carItemTargetType(station) })));
   }
+  // v19.31.0: 운송본부 사용자는 실/본부 CAR 제외 (모든 CAR 소비처 자동 division-free)
+  if (!canSeeDivision()) return out.filter(it => it.targetType !== 'division');
   return out;
 }
 
@@ -16711,6 +16805,7 @@ function gatherDivisionData(year, division) {
 }
 
 function renderDivisionDetail(year, division) {
+  if (!canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); if (typeof closeStationDetail==='function') closeStationDetail(); return; } // v19.31.0
   // 원본 지점 HTML 저장 (최초 1회)
   _saveStationDetailOriginalHTML();
 
@@ -17050,6 +17145,8 @@ function _restoreStationDetailHTML() {
 
 function renderStationDetail(year, station) {
   // v17.3.0: 실/본부이면 전용 상세 페이지
+  // v19.31.0: 운송본부 사용자는 실/본부 상세 2차 방어
+  if (DIVISIONS[station] && !canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); if (typeof closeStationDetail==='function') closeStationDetail(); return; }
   if (DIVISIONS[station]) { renderDivisionDetail(year, station); return; }
 
   // 지점: 원본 차트 HTML 복원 (실/본부 뷰에서 돌아올 때)
@@ -17542,7 +17639,7 @@ Object.assign(window, {
   APP_ENV, ENV_PREFIX,
   // Auth
   doLogin, doLogout, doAdminSetup, doPasswordChange, doForcePasswordChange, showPasswordChange, showLoginForm, showForcePasswordChange, toggleMobileUserMenu,
-  createNewUser, changeUserRole, deleteUser, hasRole, requireRole,
+  createNewUser, changeUserRole, changeUserScope, deleteUser, hasRole, requireRole, canSeeDivision, scopedData,
   // Home
   renderHome, renderHomeGreeting, renderHomeMySchedule, getMyAuditorProfile, getMySchedules,
   renderInputPendingStations, renderViewRecentStations,
