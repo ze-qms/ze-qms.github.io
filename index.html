@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.33.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.34.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.33.1',
+  version: '19.34.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7188,9 +7188,10 @@ function renderOverviewStats() {
     const periodLbl = statsPeriodLabel();
 
     // 완료 집합 3종 (renderHome 패턴)
-    const completedStations = new Set(scoped.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)').map(d => d.station).filter(Boolean));
-    const completedDivisions = new Set(scoped.filter(d => d.auditCategory === 'division').map(d => d.division || d.station).filter(Boolean));
-    const completedOutsourcing = new Set(scoped.filter(d => d.region === '협력사(본사)').map(d => d.station).filter(Boolean));
+    // v19.34.0: '완료' = 배정 점검표 전종 완료 (1종만 입력된 대상이 '완료 심사대상'에 잡히던 버그 수정)
+    const completedStations = new Set(scoped.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)').map(d => d.station).filter(n => n && isTargetFullyAudited(year, n)));
+    const completedDivisions = new Set(scoped.filter(d => d.auditCategory === 'division').map(d => d.division || d.station).filter(n => n && isTargetFullyAudited(year, n)));
+    const completedOutsourcing = new Set(scoped.filter(d => d.region === '협력사(본사)').map(d => d.station).filter(n => n && isTargetFullyAudited(year, n)));
     const completedAll = new Set([...completedStations, ...completedDivisions, ...completedOutsourcing]);
 
     // 평균 지표
@@ -7722,7 +7723,7 @@ function renderStatsDashboard() {
   const intAvg = intlCount > 0 ? (intlAvg / intlCount).toFixed(2) : '0.00';
 
   // Completion rate: scheduleData 등록된 심사대상지 기준 (지점만)
-  const completedStations = new Set(yearData.filter(d => d.region !== '협력사(본사)').map(d => d.station));
+  const completedStations = new Set(yearData.filter(d => d.region !== '협력사(본사)').map(d => d.station).filter(n => n && isTargetFullyAudited(year, n))); // v19.34.0: 전종 완료만
   const scheduledBranchStations = new Set(scheduleData.filter(s => s.year == year && s.auditTarget === 'branch').map(s => s.station));
   const totalStations = scheduledBranchStations.size;
   const completedScheduled = [...completedStations].filter(s => scheduledBranchStations.has(s)).length;
@@ -10188,6 +10189,18 @@ function getExpectedTypesForStation(station) {
   return ALL_BRANCH_TYPES;
 }
 
+// v19.34.0: 심사대상 '완료' 통일 헬퍼 — 배정된 점검표 전종이 작성 완료(부분저장 아님)돼야 완료.
+// calcScheduleStatus(completedCount>=totalExpected)·renderInputPendingStations와 동일 기준.
+// 이전 completedStations 등은 '!partial 레코드가 1개라도 있으면 완료'로 집계 → 1종만 입력된 대상이 완료로 새던 버그.
+function isTargetFullyAudited(year, name) {
+  if (!name) return false;
+  const expected = getExpectedTypesForStation(name);
+  if (!expected || expected.length === 0) return false;
+  return expected.every(type =>
+    allData.some(d => d.year == year && (d.station === name || d.division === name) && d.type === type && !d.partial)
+  );
+}
+
 function calcScheduleStatus(item) {
   // 미정(일정 조정 중) — month 0
   if (item.month === 0) return { status: 'tbd', label: '미정', count: 0, total: 0 };
@@ -12529,7 +12542,8 @@ function renderHome() {
   const yearData = scopedData().filter(d => d.year == currentYear);
 
   // 진행률: scheduleData 등록 기준 (지점만, 협력사 제외) — v19.28.0: 작성 중(부분 저장) 제외
-  const completedStations = new Set(yearData.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)' && !d.partial).map(d => d.station));
+  // v19.34.0: '완료' = 배정 점검표 전종 완료 (이전엔 !partial 레코드 1개라도 있으면 완료로 집계 → 1종만 입력된 지점이 완료로 샜음)
+  const completedStations = new Set(yearData.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)').map(d => d.station).filter(n => isTargetFullyAudited(currentYear, n)));
   const scheduledBranchHome = new Set(scheduleData.filter(s => s.year == currentYear && s.auditTarget === 'branch').map(s => s.station));
   const totalStations = scheduledBranchHome.size;
   const completedScheduledHome = [...completedStations].filter(s => scheduledBranchHome.has(s)).length;
@@ -12553,7 +12567,7 @@ function renderHome() {
 
   // 실/본부 진행률 계산 — scheduleData 등록 기준 (v19.28.0: 작성 중 제외)
   const divisionData = yearData.filter(d => d.auditCategory === 'division' && !d.partial);
-  const completedDivisions = new Set(divisionData.map(d => d.division || d.station));
+  const completedDivisions = new Set(divisionData.map(d => d.division || d.station).filter(n => isTargetFullyAudited(currentYear, n))); // v19.34.0: 전종 완료만
   const scheduledDivHome = new Set(scheduleData.filter(s => s.year == currentYear && s.auditTarget === 'division').map(s => s.station));
   const totalDivisions = scheduledDivHome.size || DIVISION_NAMES.length;
   const completedDivScheduled = [...completedDivisions].filter(s => scheduledDivHome.size > 0 ? scheduledDivHome.has(s) : true).length;
@@ -12647,7 +12661,7 @@ function renderHome() {
   `;
 
   // Recent audits — 심사일 기준 최신순 정렬 (v19.21.2: 지점 + 실/본부 + 외주협력업체 통합 — 이전엔 completedStations만 써서 실/본부·외주 누락 버그)
-  const completedOutsourcing = new Set(yearData.filter(d => d.region === '협력사(본사)' && !d.partial).map(d => d.station).filter(Boolean));
+  const completedOutsourcing = new Set(yearData.filter(d => d.region === '협력사(본사)').map(d => d.station).filter(n => n && isTargetFullyAudited(currentYear, n))); // v19.34.0: 전종 완료만
   const completedAll = new Set([...completedStations, ...completedDivisions, ...completedOutsourcing]);
   const stationDates = {};
   yearData.forEach(d => {
