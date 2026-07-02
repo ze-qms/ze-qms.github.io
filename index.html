@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.35.3</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.35.4</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.35.3',
+  version: '19.35.4',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7568,7 +7568,7 @@ function renderPeriodReport() {
         + `<p style="font-size:13px;color:#9EA2A1;margin:0 0 16px;">심사 건수는 심사대상 단위(가장 이른 심사월 기준) · 작성 중 제외</p>`
         + `<div class="grid grid-cols-1 md:grid-cols-2 gap-6">`
         + chartBlock('심사 · CAR 발행 건수', 'prMonCount', '막대 = 심사 건수 · 선 = CAR 발행 · 빨강 = 금년 · 파랑 = 전년')
-        + chartBlock(canSeeDivision() ? '지점 성숙도 · 실/본부 적합률' : '지점 성숙도', 'prMonRate', canSeeDivision() ? '막대 = 성숙도(좌축) · 선 = 적합률(우축) · 빨강 = 금년 · 파랑 = 전년' : '막대 = 성숙도 · 빨강 = 금년 · 파랑 = 전년') // v19.31.0 scope
+        + chartBlock(canSeeDivision() ? '지점 성숙도 · 실/본부 적합률 (누적 평균)' : '지점 성숙도 (누적 평균)', 'prMonRate', (canSeeDivision() ? '막대 = 성숙도(좌축) · 선 = 적합률(우축) · 빨강 = 금년 · 파랑 = 전년' : '막대 = 성숙도 · 빨강 = 금년 · 파랑 = 전년') + ' · 연초~해당 월 심사분 누적') // v19.31.0 scope · v19.35.4 누적
         + `</div></div>`;
     }
 
@@ -7719,10 +7719,23 @@ function _prMonthlyAgg(y) {
     const mo = monthOf[it.station];
     if (mo != null) car[mo - 1]++;
   });
+  // v19.35.4: 성숙도·적합률은 월별 스냅샷 → 누적 평균(YTD)으로 — 월별 심사 대상 구성이 매년 달라
+  // 스냅샷 비교는 비교군 불일치(사용자 지적). 연초부터 해당 월까지 심사분 누적 평균으로 표본을 쌓아 완화.
+  // 데이터 없는 달은 직전 누적값 유지(carry), 마지막 심사월 이후는 null(미래로 flat 연장 방지).
+  const cumOf = (sumArr, nArr, digits) => {
+    let cs = 0, cn = 0, last = -1;
+    for (let i = 11; i >= 0; i--) { if (nArr[i]) { last = i; break; } }
+    return sumArr.map((s, i) => {
+      cs += s; cn += nArr[i];
+      if (!cn || i > last) return null;
+      const f = Math.pow(10, digits);
+      return Math.round(cs / cn * f) / f;
+    });
+  };
   return {
     audits, car,
-    mat: matSum.map((s, i) => matN[i] ? Math.round(s / matN[i] * 100) / 100 : null),
-    comp: compSum.map((s, i) => compN[i] ? Math.round(s / compN[i] * 10) / 10 : null)
+    mat: cumOf(matSum, matN, 2),
+    comp: cumOf(compSum, compN, 1)
   };
 }
 function renderPeriodMonthlyCharts(year) {
