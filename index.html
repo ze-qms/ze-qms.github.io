@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.35.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.35.3</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.35.2',
+  version: '19.35.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7568,7 +7568,7 @@ function renderPeriodReport() {
         + `<p style="font-size:13px;color:#9EA2A1;margin:0 0 16px;">심사 건수는 심사대상 단위(가장 이른 심사월 기준) · 작성 중 제외</p>`
         + `<div class="grid grid-cols-1 md:grid-cols-2 gap-6">`
         + chartBlock('심사 · CAR 발행 건수', 'prMonCount', '막대 = 심사 건수 · 선 = CAR 발행 · 빨강 = 금년 · 파랑 = 전년')
-        + chartBlock(canSeeDivision() ? '지점 성숙도 · 실/본부 적합률' : '지점 성숙도', 'prMonRate', canSeeDivision() ? '막대 = 금년 · 점선 = 전년 · 빨강 = 성숙도(좌축) · 파랑 = 적합률(우축)' : '막대 = 금년 · 점선 = 전년 · 월 평균 성숙도') // v19.31.0 scope
+        + chartBlock(canSeeDivision() ? '지점 성숙도 · 실/본부 적합률' : '지점 성숙도', 'prMonRate', canSeeDivision() ? '막대 = 성숙도(좌축) · 선 = 적합률(우축) · 빨강 = 금년 · 파랑 = 전년' : '막대 = 성숙도 · 빨강 = 금년 · 파랑 = 전년') // v19.31.0 scope
         + `</div></div>`;
     }
 
@@ -7771,21 +7771,20 @@ function renderPeriodMonthlyCharts(year) {
       });
     }
 
-    // ② 지점 성숙도(빨강계열, 좌축 0~4) · 실/본부 적합률(파랑계열, 우축 %)
-    // v19.35.2: 금년=막대 · 전년=점선 추세선 (v19.27.9 divTrendChart와 동일 패턴, 사용자 요청)
+    // ② 지점 성숙도(막대, 좌축 0~4) · 실/본부 적합률(선, 우축 %)
+    // v19.35.3: 차트①과 동일 문법으로 통일 — 형태=지표(막대=성숙도·선=적합률), 색=연도(금년 빨강·전년 파랑)
     const c2 = document.getElementById('prMonRate');
     if (c2) {
-      const MAT_PRE = '#F09CAA', COMP_CUR = '#1D6FB8', COMP_PRE = '#93C5FD';
       const showComp = canSeeDivision(); // v19.31.0 scope — 운송본부 사용자는 적합률 미표시
-      const barBase = { type: 'bar', borderWidth: 1.5, borderRadius: 4, barPercentage: 0.66, categoryPercentage: 0.56 };
+      const barBase = { type: 'bar', borderWidth: 1, borderRadius: 4, barPercentage: 0.72, categoryPercentage: 0.6 };
       const datasets = [
-        Object.assign({}, barBase, { order: 3, yAxisID: 'y', label: '성숙도 ' + year + '년', data: cur.mat, backgroundColor: CUR + '42', borderColor: CUR }),
-        Object.assign({}, lineBase, { order: 1, yAxisID: 'y', label: '성숙도 ' + (year - 1) + '년', data: pre.mat, borderColor: MAT_PRE, backgroundColor: MAT_PRE, pointBorderColor: MAT_PRE, borderDash: [5, 4] })
+        Object.assign({}, barBase, { order: 3, yAxisID: 'y', label: '성숙도 ' + (year - 1) + '년', data: pre.mat, backgroundColor: PRE + '80', borderColor: PRE }),
+        Object.assign({}, barBase, { order: 3, yAxisID: 'y', label: '성숙도 ' + year + '년', data: cur.mat, backgroundColor: CUR + '80', borderColor: CUR })
       ];
       if (showComp) {
         datasets.push(
-          Object.assign({}, barBase, { order: 3, yAxisID: 'y1', label: '적합률 ' + year + '년', data: cur.comp, backgroundColor: COMP_CUR + '42', borderColor: COMP_CUR }),
-          Object.assign({}, lineBase, { order: 2, yAxisID: 'y1', label: '적합률 ' + (year - 1) + '년', data: pre.comp, borderColor: COMP_PRE, backgroundColor: COMP_PRE, pointBorderColor: COMP_PRE, borderDash: [5, 4] })
+          Object.assign({}, lineBase, { order: 2, yAxisID: 'y1', label: '적합률 ' + (year - 1) + '년', data: pre.comp, borderColor: PRE, backgroundColor: PRE, pointBorderColor: PRE, borderDash: [5, 4] }),
+          Object.assign({}, lineBase, { order: 1, yAxisID: 'y1', label: '적합률 ' + year + '년', data: cur.comp, borderColor: CUR, backgroundColor: CUR, pointBorderColor: CUR })
         );
       }
       // 우축 최소값: 데이터 최저점 -10 을 5단위 내림 (변별력, 50~90 클램프 — divTrendChart와 동일 정책)
@@ -7809,10 +7808,10 @@ function renderPeriodMonthlyCharts(year) {
             datalabels: {
               display: c => c.raw != null,
               anchor: c => c.dataset.type === 'bar' ? 'end' : 'center',
-              align: c => c.dataset.type === 'bar' ? 'end' : 'bottom', // 막대(금년)=위 끝·점선(전년)=아래 (겹침 완화)
+              align: c => c.dataset.type === 'bar' ? 'end' : (c.datasetIndex === 3 ? 'top' : 'bottom'), // 선: 금년=위·전년=아래 (겹침 완화)
               offset: c => c.dataset.type === 'bar' ? 0 : 4,
-              color: c => c.dataset.type === 'bar' ? (isMat(c) ? CUR : COMP_CUR) : c.dataset.borderColor,
-              font: c => ({ size: 10, weight: c.dataset.type === 'bar' ? '700' : '600' }),
+              color: c => (c.datasetIndex === 1 || c.datasetIndex === 3) ? CUR : '#1D6FB8', // 색=연도 (차트①과 동일)
+              font: { size: 10, weight: '700' },
               formatter: (v, c) => isMat(c) ? Number(v).toFixed(2) : v + '%'
             }
           }
