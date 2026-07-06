@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.39.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.39.0',
+  version: '19.40.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -2866,7 +2866,7 @@ const DIVISIONS = {
   "객실본부": { id: "cabin", checklists: ["qa_cabin", "safety_division", "fsds"] },
   "안전보안실": { id: "safety_security", checklists: ["qa_safety_security", "safety_division", "fsds"] },
   "종합통제실": { id: "occ", checklists: ["qa_occ", "safety_division", "fsds"] },
-  "케이터링운영파트": { id: "catering", checklists: ["qa_catering", "safety_division", "fsds"] }
+  "케이터링운영파트": { id: "catering", checklists: ["qa_catering", "safety_division"] } // v19.40.0: FSDS 미실시 — 항목·점수 제외
 };
 
 const DIVISION_NAMES = Object.keys(DIVISIONS);
@@ -4129,7 +4129,9 @@ function canSeeDivision() {
 }
 // 집계/렌더 진입점 표준 데이터 소스. division을 못 보는 사용자는 division 레코드 제거된 배열을 받음.
 function scopedData() {
-  if (canSeeDivision()) return allData;
+  // v19.40.0: 실/본부의 기대 목록 밖 레코드(예: 케이터링 FSDS 미실시)는 모든 집계에서 제외
+  const valid = d => d.auditCategory !== 'division' || getExpectedTypesForStation(d.division || d.station).includes(d.type);
+  if (canSeeDivision()) return allData.filter(valid);
   return allData.filter(d => d.auditCategory !== 'division');
 }
 // 일정(scheduleData) 표준 소스. division을 못 보는 사용자는 실/본부 일정 제거.
@@ -7346,19 +7348,22 @@ function _periodMatch(d, mode, q, m) {
   if (mode === 'quarter') return Math.ceil(mo / 3) === q;
   return mo === m;
 }
+// v19.40.0: YTD 경과월 — 당해년도=이번 달, 과거 연도=12월(전체), 미래=0. (_prMonthlyAgg carryEnd와 동일)
+function _prYtdEndMonth(year) {
+  const now = new Date();
+  return year < now.getFullYear() ? 12 : (year == now.getFullYear() ? now.getMonth() + 1 : 0);
+}
 function _prevPeriodOf(year) {
-  // statsPeriod 기준 직전 기간 반환 {year, mode, quarter, month, label}
+  // v19.40.0: '직전 기간' → '전년 동기'(YoY). 대표 보고 목적(전년 대비)에 맞춰 전 모드 전년 동기 비교로 통일.
+  const y = year - 1;
   if (statsPeriod.mode === 'quarter') {
-    let q = statsPeriod.quarter - 1, y = year;
-    if (q < 1) { q = 4; y = year - 1; }
-    return { year: y, mode: 'quarter', quarter: q, month: 0, label: y + '년 ' + q + '분기' };
+    return { year: y, mode: 'quarter', quarter: statsPeriod.quarter, month: 0, label: y + '년 ' + statsPeriod.quarter + '분기' };
   }
   if (statsPeriod.mode === 'month') {
-    let mo = statsPeriod.month - 1, y = year;
-    if (mo < 1) { mo = 12; y = year - 1; }
-    return { year: y, mode: 'month', quarter: 0, month: mo, label: y + '년 ' + mo + '월' };
+    return { year: y, mode: 'month', quarter: 0, month: statsPeriod.month, label: y + '년 ' + statsPeriod.month + '월' };
   }
-  return { year: year - 1, mode: 'year', quarter: 0, month: 0, label: (year - 1) + '년' };
+  // 연간: 전년 동기 YTD (금년 경과월까지 절단은 renderPeriodReport에서 대칭 처리)
+  return { year: y, mode: 'year', quarter: 0, month: 0, label: y + '년' };
 }
 function _prWeakAgg(records) {
   const agg = {}; // type|id
@@ -7478,8 +7483,15 @@ function renderPeriodReport() {
     const prev = _prevPeriodOf(year);
 
     // v19.31.0: scopedData()로 운송본부 사용자에겐 실/본부 제외 → 지점(+외주)만으로 재계산
+    // v19.40.0: 전년 '동기' 비교 — 연간 모드에서 전년을 금년 경과월(YTD)까지만 절단(기간 길이 일치).
+    //   금년은 당해년도라 미래 데이터가 없어 사실상 YTD. 전년 전체(1~12월)와 비교하던 왜곡 제거.
+    const _ytdEnd = _prYtdEndMonth(year);
+    const _prevInSync = d => {
+      if (statsPeriod.mode !== 'year') return _periodMatch(d, prev.mode, prev.quarter, prev.month);
+      const mo = _statsRecordMonth(d); return mo != null && mo <= _ytdEnd; // 전년 1~경과월
+    };
     const scoped = applyStatsPeriod(scopedData().filter(d => d.year == year && !d.partial));
-    const prevScoped = scopedData().filter(d => d.year == prev.year && !d.partial && _periodMatch(d, prev.mode, prev.quarter, prev.month));
+    const prevScoped = scopedData().filter(d => d.year == prev.year && !d.partial && _prevInSync(d));
 
     // 유형별 분류
     const isBranch = d => d.auditCategory === 'branch' && d.region !== '협력사(본사)';
@@ -7527,8 +7539,11 @@ function renderPeriodReport() {
     // 직전 기간 CAR (대비용 건수)
     const prevMonthOf = {};
     allData.filter(d => d.year == prev.year).forEach(d => { const mo = _statsRecordMonth(d); if (mo != null && (prevMonthOf[d.station] == null || mo < prevMonthOf[d.station])) prevMonthOf[d.station] = mo; });
-    const prevCarCount = (typeof collectCarItems === 'function' ? collectCarItems(prev.year) : []).filter(it =>
-      prev.mode === 'year' ? true : (prevMonthOf[it.station] != null && (prev.mode === 'quarter' ? Math.ceil(prevMonthOf[it.station] / 3) === prev.quarter : prevMonthOf[it.station] === prev.month))).length;
+    const prevCarCount = (typeof collectCarItems === 'function' ? collectCarItems(prev.year) : []).filter(it => {
+      const pmo = prevMonthOf[it.station];
+      if (prev.mode === 'year') return _ytdEnd >= 12 ? true : (pmo != null && pmo <= _ytdEnd); // v19.40.0: 전년 동기 YTD 절단
+      return pmo != null && (prev.mode === 'quarter' ? Math.ceil(pmo / 3) === prev.quarter : pmo === prev.month);
+    }).length;
 
     // 4) 취약/부적합 상위
     const weak = _prWeakAgg(scoped.filter(d => isBranch(d) || isDiv(d) || isOut(d)));
@@ -7546,7 +7561,7 @@ function renderPeriodReport() {
       + `<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">`
       + `<div><div style="font-size:13px;color:#9EA2A1;">기간 종합 리포트</div>`
       + `<h2 style="font-size:24px;font-weight:700;letter-spacing:-0.4px;color:#303A3C;margin:2px 0 0;">${periodLbl}</h2>`
-      + `<div style="font-size:13px;color:#9EA2A1;margin-top:4px;">직전 기간(${prev.label}) 대비 · 작성 중 제외</div></div>`
+      + `<div style="font-size:13px;color:#9EA2A1;margin-top:4px;">전년 동기(${statsPeriod.mode === 'year' && _ytdEnd < 12 ? prev.year + '년 1~' + _ytdEnd + '월' : prev.label}) 대비 · 작성 중 제외</div></div>`
       + `<button onclick="copyPeriodReport()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 16px;">📋 그룹웨어 복사</button>`
       + `</div></div>`;
 
@@ -8337,7 +8352,9 @@ function renderDivisionStats() {
     let dS = 0, dU = 0, dNA = 0;
     let qaS = 0, qaU = 0;
     let safetyRate = null, fsdsRate = null;
+    const _expected = getExpectedTypesForStation(divName); // v19.40.0: 기대 목록 밖 레코드(예: 케이터링 FSDS) 집계 제외
     records.forEach(r => {
+      if (!_expected.includes(r.type)) return;
       const res = calculateBinaryScores(r.scores, getChecklist(r.type));
       dS += res.yesCount; dU += res.noCount; dNA += res.naCount;
       if (r.type && r.type.startsWith('qa_')) { qaS += res.yesCount; qaU += res.noCount; }
@@ -9657,6 +9674,7 @@ function renderDivisionAnalysis() {
   let totalU = 0, rSum = 0, rN = 0;
   yearData.forEach(d => {
     const div = d.division || d.station;
+    if (!getExpectedTypesForStation(div).includes(d.type)) return; // v19.40.0: 기대 목록 밖 레코드(예: 케이터링 FSDS) 제외
     if (!divGroups[div]) divGroups[div] = {};
     const result = calculateBinaryScores(d.scores, getChecklist(d.type));
     totalU += result.noCount;
