@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.38.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.38.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.38.0',
+  version: '19.38.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7550,14 +7550,14 @@ function renderPeriodReport() {
       + `<button onclick="copyPeriodReport()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 16px;">📋 그룹웨어 복사</button>`
       + `</div></div>`;
 
-    // KPI 4종
-    html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">`;
+    // KPI — v19.38.1: 실/본부·외주 적합률 카드 분리 (이전엔 실/본부 우선 fallback 단일 카드)
+    const _showDivKpi = canSeeDivision(); // v19.31.0: 운송본부 사용자는 실/본부 카드 제외
+    const _rateVal = v => v != null ? v.toFixed(0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>';
+    html += `<div class="grid grid-cols-2 ${_showDivKpi ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mb-4">`;
     html += kpiCard('완료 심사', `${curDone}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(curDone, preDone, 0, '건', false), '#303A3C');
     html += kpiCard('지점 평균 성숙도', matCur != null ? matCur.toFixed(2) : '<span style="font-size:16px;color:#C0CED1;">-</span>', matCur != null ? _prDelta(matCur, matPre, 2, '', false) : '', matCur != null ? avgColor(matCur) : '#C0CED1');
-    const compShow = divCur != null ? divCur : outCur;
-    const compPrev = divCur != null ? divPre : outPre;
-    const _compLabel = canSeeDivision() ? '실/본부·외주 적합률' : '외주 적합률'; // v19.31.0
-    html += kpiCard(_compLabel, compShow != null ? compShow.toFixed(0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>', compShow != null ? _prDelta(compShow, compPrev, 0, '%p', false) : '', '#0067C4');
+    if (_showDivKpi) html += kpiCard('실/본부 적합률', _rateVal(divCur), divCur != null ? _prDelta(divCur, divPre, 0, '%p', false) : '', '#0067C4');
+    html += kpiCard('외주 적합률', _rateVal(outCur), outCur != null ? _prDelta(outCur, outPre, 0, '%p', false) : '', '#C2410C');
     html += kpiCard('CAR 발행', `${carItems.length}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(carItems.length, prevCarCount, 0, '건', true), '#D20015');
     html += `</div>`;
 
@@ -7667,7 +7667,8 @@ function renderPeriodReport() {
     // v19.31.0: 운송본부 사용자는 실/본부 제외 텍스트
     txt.push(`- 완료 심사: ${curDone}건 (지점 ${cur.branch.size}${canSeeDivision() ? ' · 실/본부 ' + cur.division.size : ''} · 외주 ${cur.outsourcing.size})`);
     if (matCur != null) txt.push(`- 지점 평균 성숙도: ${matCur.toFixed(2)}`);
-    if (compShow != null) txt.push(`- ${_compLabel} 평균: ${compShow.toFixed(0)}%`);
+    if (_showDivKpi && divCur != null) txt.push(`- 실/본부 적합률: ${divCur.toFixed(0)}%`); // v19.38.1: 분리
+    if (outCur != null) txt.push(`- 외주 적합률: ${outCur.toFixed(0)}%`);
     txt.push(`- CAR 발행: ${carItems.length}건 (Class1 ${clsCount.class1 || 0} · Class2 ${clsCount.class2 || 0} · Concern ${clsCount.concern || 0})`);
     txt.push('');
     if (planTotal) txt.push(`■ 진척: 계획 ${planTotal} / 완료 ${statusTally.completed} · 진행 중 ${statusTally.in_progress} · 예정 ${statusTally.planned} · 지연/미완료 ${statusTally.delayed}`);
