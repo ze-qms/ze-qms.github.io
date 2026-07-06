@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.36.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.37.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.36.0',
+  version: '19.37.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -13399,7 +13399,7 @@ function renderViewRecentStations() {
       const avgRate = totalSU > 0 ? totalS / totalSU : null;
       const rateStyle = avgRate != null ? (avgRate >= 90 ? 'background:rgba(34,197,94,0.15);color:#22C55E' : avgRate >= 70 ? 'background:rgba(245,158,11,0.15);color:#F59E0B' : 'background:rgba(210,0,21,0.15);color:#D20015') : '';
       html += `<tr style="cursor:pointer;" onclick="document.getElementById('viewTarget').value='${s.station}';if(document.getElementById('viewTarget')._comboRefresh)document.getElementById('viewTarget')._comboRefresh();viewSearch()">`;
-      html += `<td data-label="업체" style="font-weight:600;">${s.station}<div style="font-size:10px;color:#F59E0B;">외주협력</div></td>`;
+      html += `<td data-label="업체" style="font-weight:600;">${stationLink(year, s.station)}<div style="font-size:10px;color:#F59E0B;">외주협력</div></td>`;
       html += `<td style="text-align:center;">${avgRate != null ? '<span class="badge-pill" style="' + rateStyle + '">' + avgRate.toFixed(0) + '%</span>' : '<span style="color:#C0CED1;">-</span>'}</td>`;
       html += `<td style="text-align:center;font-size:11px;color:#565A5B;">${dateDisplay}</td>`;
       html += '</tr>';
@@ -13670,6 +13670,12 @@ function openStationDetail(year, station, _fromPopstate) {
   try {
     const _carEditable = canEditAssessment(year, station);
     document.querySelectorAll('#sdCarEditBtn').forEach(b => { b.style.display = _carEditable ? '' : 'none'; });
+  } catch(e) {}
+  // v19.37.0: 외주협력업체는 전자결재 양식(지점/실본부 전용) 다운로드 항목 숨김 — PDF만 노출
+  try {
+    const _isOut = isOutsourcingTarget(station);
+    document.querySelectorAll('#sdDownloadMenu .sd-download-item[onclick="downloadDetailHTML()"], #sdDownloadMenu .sd-download-item[onclick="copyDetailHTMLToClipboard()"]')
+      .forEach(b => { b.style.display = _isOut ? 'none' : ''; });
   } catch(e) {}
 }
 
@@ -14415,6 +14421,8 @@ function injectReportDraftPanel(year, key){
   const existing = document.getElementById('sdReportPanel');
   if (existing) existing.remove();
   if (!currentUser) return; // 비로그인 시 미표시
+  // v19.37.0: 외주협력업체는 결과보고 양식(지점/실본부 전용) 미지원 → 패널 미표시
+  if (typeof isOutsourcingTarget === 'function' && isOutsourcingTarget(key)) return;
   // v19.31.2: 결과보고 패널은 배정 심사원 + admin만 (작성/수정 규칙 동일 적용)
   if (!canEditAssessment(year, key)) return;
   root.insertAdjacentHTML('beforeend', _reportPanelHTML(year, key));
@@ -17258,6 +17266,231 @@ function renderDivisionDetail(year, division) {
   }
 }
 
+// --- Outsourcing Detail (v19.37.0) ---
+// 외주협력업체 판별: REGIONS '협력사(본사)' 소속 또는 레코드에 외주 표식 (실/본부는 제외)
+function isOutsourcingTarget(station) {
+  if (!station || DIVISIONS[station]) return false;
+  if (getRegionForStation(station) === '협력사(본사)') return true;
+  return allData.some(d => d.station === station && (d.auditCategory === 'outsourcing' || d.region === '협력사(본사)'));
+}
+
+function gatherOutsourcingData(year, station) {
+  // binary 채점 레코드만 집계 (통상 외주협력업체 점검 1종) — grade 레코드는 외주 상세 범위 밖
+  const recOf = y => allData.filter(d => d.year == y && d.station === station && getScoringMethod(d.type) === 'binary');
+  const records = recOf(year);
+
+  const typeResults = {};
+  let totalS = 0, totalU = 0, totalNA = 0;
+  records.forEach(rec => {
+    const result = calculateBinaryScores(rec.scores, getChecklist(rec.type));
+    typeResults[rec.type] = { ...result, typeName: CHECKLIST_REGISTRY[rec.type]?.name || rec.type, remarks: rec.remarks || {} };
+    totalS += result.yesCount; totalU += result.noCount; totalNA += result.naCount;
+  });
+  const overallRate = (totalS + totalU) > 0 ? (totalS / (totalS + totalU) * 100) : null;
+
+  // 카테고리별 적합률 (점검표 순서 그대로 — 카드/차트 공용)
+  const catRates = [];
+  Object.values(typeResults).forEach(tr => {
+    for (const [catName, cr] of Object.entries(tr.categoryResults)) {
+      catRates.push({ name: catName, rate: cr.complianceRate, s: cr.yesCount, u: cr.noCount, na: cr.naCount });
+    }
+  });
+
+  const firstRec = records[0];
+  const auditor = firstRec?.auditor || '-';
+  const dateStart = firstRec?.auditDateStart || firstRec?.auditDate || '';
+  const dateEnd = firstRec?.auditDateEnd || '';
+
+  // 직전 심사 (최근 3년 내 가장 가까운 연도 — 실/본부와 동일 정책)
+  let prevYear = null, prevOverallRate = null;
+  const prevCatRates = {};
+  for (let y = year - 1; y >= year - 3; y--) {
+    const prevRecs = recOf(y);
+    if (prevRecs.length > 0) {
+      prevYear = y;
+      let pS = 0, pU = 0;
+      prevRecs.forEach(rec => {
+        const r = calculateBinaryScores(rec.scores, getChecklist(rec.type));
+        pS += r.yesCount; pU += r.noCount;
+        for (const [catName, cr] of Object.entries(r.categoryResults)) prevCatRates[catName] = cr.complianceRate;
+      });
+      prevOverallRate = (pS + pU) > 0 ? (pS / (pS + pU) * 100) : null;
+      break;
+    }
+  }
+
+  // 부적합(U) 항목 수집
+  const nonCompliantItems = [];
+  records.forEach(rec => {
+    const cl = getChecklist(rec.type);
+    const typeName = CHECKLIST_REGISTRY[rec.type]?.name || rec.type;
+    for (const [catName, catData] of Object.entries(cl)) {
+      for (const item of catData.items) {
+        const val = rec.scores[item.id];
+        if (val === 'U' || val === 'NO' || val === 'N') {
+          nonCompliantItems.push({ typeName, catName, id: item.id, text: item.text, remark: rec.remarks?.[item.id] || '' });
+        }
+      }
+    }
+  });
+
+  return { year, station, auditor, dateStart, dateEnd, records, typeResults, catRates,
+    totalS, totalU, totalNA, overallRate, prevYear, prevOverallRate, prevCatRates, nonCompliantItems };
+}
+
+// 카테고리명 축약 (카드·차트 라벨용): 선두 번호 제거 + 선택적 길이 제한
+function _outCatLabel(name, max) {
+  const s = String(name || '').replace(/^\d+\.\s*/, '');
+  return max && s.length > max ? s.substring(0, max) + '..' : s;
+}
+
+function renderOutsourcingDetail(year, station) {
+  // 원본 지점 HTML 저장 (최초 1회) — 실/본부와 동일 패턴
+  _saveStationDetailOriginalHTML();
+
+  const d = gatherOutsourcingData(year, station);
+
+  document.getElementById('sdTitle').textContent = station;
+  document.getElementById('sdSubtitle').innerHTML = _sdYearChipHTML(year, station) + ' 외주협력업체 점검 결과';
+
+  const dateStr = d.dateStart && d.dateEnd ? d.dateStart + ' ~ ' + d.dateEnd : (d.dateStart || '-');
+  document.getElementById('sdAuditInfo').innerHTML =
+    '<div class="grid grid-cols-2 md:grid-cols-3 gap-4">' +
+    '<div><div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">심사원</div><div style="font-size:14px;font-weight:600;color:#303A3C;">' + d.auditor + '</div></div>' +
+    '<div><div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">심사 기간</div><div style="font-size:14px;font-weight:600;color:#303A3C;">' + dateStr + '</div></div>' +
+    '<div><div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">점검표</div><div style="font-size:14px;font-weight:600;color:#303A3C;">' + d.records.length + '종</div></div>' +
+    '</div>';
+
+  // 적합률 카드: 종합 + 카테고리별 (최대 3 — sdChecklistOverview 4열 grid)
+  const fmtRate = r => r != null ? r.toFixed(1) + '%' : '-';
+  const rateStyle = r => r == null ? 'color:#9EA2A1;' : Scoring.getRateBadgeStyle(r);
+  const deltaHtml = (curr, prev) => {
+    if (curr == null || prev == null) return '';
+    const diff = curr - prev;
+    const sign = diff >= 0 ? '+' : '';
+    const color = diff > 0 ? '#22C55E' : diff < 0 ? '#D20015' : '#9EA2A1';
+    return '<div style="font-size:11px;color:' + color + ';margin-top:4px;">' + sign + diff.toFixed(1) + '% vs ' + d.prevYear + '</div>';
+  };
+
+  let cards = '<div class="apple-card" style="padding:16px;text-align:center;"><div style="font-size:12px;color:#9EA2A1;">종합 적합률</div><div style="font-size:32px;font-weight:700;letter-spacing:-0.5px;' + rateStyle(d.overallRate) + '">' + fmtRate(d.overallRate) + '</div><div style="font-size:11px;color:#9EA2A1;">S:' + d.totalS + ' U:' + d.totalU + ' NA:' + d.totalNA + '</div>' + deltaHtml(d.overallRate, d.prevOverallRate) + '</div>';
+  d.catRates.slice(0, 3).forEach(c => {
+    cards += '<div class="apple-card" style="padding:16px;text-align:center;"><div style="font-size:12px;color:#9EA2A1;">' + _outCatLabel(c.name, 14) + '</div><div style="font-size:28px;font-weight:600;letter-spacing:-0.28px;' + rateStyle(c.rate) + '">' + fmtRate(c.rate) + '</div><div style="font-size:11px;color:#9EA2A1;">S:' + c.s + ' U:' + c.u + '</div>' + deltaHtml(c.rate, d.prevCatRates ? d.prevCatRates[c.name] : null) + '</div>';
+  });
+  document.getElementById('sdChecklistOverview').innerHTML = cards;
+
+  // 차트 영역: 카테고리별 적합률 + 개선조치요구서(CAR) — 실/본부 v19.17.4 구성과 동일
+  const chartArea = document.getElementById('sdChartGrid');
+  if (chartArea) {
+    chartArea.innerHTML =
+      '<div class="apple-card" style="padding:16px;"><h3 style="font-size:15px;font-weight:600;color:#303A3C;margin-bottom:16px;">카테고리별 적합률</h3><div style="height:280px;"><canvas id="sdBarChart"></canvas></div></div>' +
+      '<div class="apple-card" style="padding:16px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">' +
+          '<h3 style="font-size:15px;font-weight:600;color:#303A3C;margin:0;">개선조치요구서 현황</h3>' +
+          '<button id="sdCarEditBtn" onclick="toggleCarEdit()" style="background:none;border:1px solid #C0CED1;cursor:pointer;padding:8px 12px;border-radius:8px;color:#565A5B;font-size:12px;" title="CAR 건수 편집">✎ 편집</button>' +
+        '</div>' +
+        '<div id="sdCarChartArea" style="position:relative;height:320px;"><canvas id="sdCarChart"></canvas></div>' +
+        '<div id="sdCarEditArea" class="hidden">' +
+          '<div style="font-size:12px;color:#9EA2A1;margin-bottom:12px;">각 분야별 개선조치요구서(CAR) 건수를 입력하세요</div>' +
+          '<div class="overflow-x-auto"><table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #C0CED1;"><th style="text-align:left;padding:8px 6px;font-weight:600;color:#565A5B;">항목</th><th style="text-align:center;padding:8px 6px;font-weight:600;color:#565A5B;width:80px;">직전심사</th><th style="text-align:center;padding:8px 6px;font-weight:600;color:#D20015;width:80px;">금번심사</th></tr></thead><tbody id="sdCarInputRows"></tbody></table></div>' +
+          '<div class="flex gap-2 mt-4"><button onclick="saveCarItemsFromInputs()" class="pill-btn pill-btn-primary" style="font-size:13px;padding:8px 20px;">저장</button><button onclick="toggleCarEdit()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 20px;">취소</button></div>' +
+        '</div>' +
+        '<div id="sdCarExtra" style="margin-top:12px;"><div id="sdCarClassSummary"></div><div id="sdCarItemsList" style="margin-top:10px;"></div></div>' +
+      '</div>';
+  }
+
+  // 외주: 지점 전용 제목 숨김 + VOC 섹션 잔류 방지
+  const catTitle = document.getElementById('sdCategoryTitle');
+  if (catTitle) catTitle.style.display = 'none';
+  const vocBox = document.getElementById('sdVocSection');
+  if (vocBox) vocBox.innerHTML = '';
+
+  // 차트 1: 카테고리별 적합률 (금번·직전 그룹 막대)
+  renderOutBarChart(d);
+  // 차트 2: CAR — 지점·실/본부와 동일 메커니즘 재사용 (year_업체명 키)
+  renderSDCarChart(carChartCounts(year, station));
+  renderCarClassSummary(year, station);
+  renderCarItemsList(year, station);
+
+  // 부적합 항목 + 카테고리별 상세 (실/본부 패턴)
+  const tableArea = document.getElementById('sdCategoryTable');
+  if (tableArea) {
+    let html = '';
+    if (d.nonCompliantItems.length > 0) {
+      html += '<div class="apple-card" style="padding:20px;margin-bottom:16px;">';
+      html += '<h3 style="font-size:15px;font-weight:600;color:#D20015;margin-bottom:12px;">부적합 항목 (U) — ' + d.nonCompliantItems.length + '건</h3>';
+      d.nonCompliantItems.forEach(item => {
+        html += '<div style="padding:10px 0;border-bottom:1px solid rgba(192,206,209,0.2);">';
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+        html += '<span class="badge-pill" style="background:rgba(210,0,21,0.1);color:#D20015;font-size:10px;padding:2px 8px;">' + _outCatLabel(item.catName, 10) + '</span>';
+        html += '<span style="font-size:13px;font-weight:600;color:#303A3C;">' + item.id + '. ' + (item.text.length > 60 ? item.text.substring(0, 60) + '...' : item.text) + '</span>';
+        html += '</div>';
+        if (item.remark) html += '<div style="font-size:12px;color:#9EA2A1;margin-left:8px;">비고: ' + item.remark + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    } else if (d.records.length > 0) {
+      html += '<div class="apple-card" style="padding:20px;margin-bottom:16px;text-align:center;"><div style="color:#22C55E;font-weight:600;font-size:15px;">부적합 항목 없음</div><div style="font-size:13px;color:#9EA2A1;margin-top:4px;">전 항목 적합 판정</div></div>';
+    } else {
+      html += '<div class="apple-card" style="padding:20px;margin-bottom:16px;text-align:center;"><div style="color:#9EA2A1;font-weight:600;font-size:15px;">' + year + '년 입력된 점검표가 없습니다</div></div>';
+    }
+
+    if (d.records.length > 0) {
+      html += '<div class="apple-card" style="padding:20px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSection(\'sdCatDetail\')">';
+      html += '<h3 style="font-size:15px;font-weight:600;color:#303A3C;margin:0;">카테고리별 상세 적합률</h3>';
+      html += '<span id="sdCatDetailArrow" style="color:#9EA2A1;font-size:14px;">▸</span>';
+      html += '</div>';
+      html += '<div id="sdCatDetail" class="hidden" style="margin-top:12px;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="background:#f9f9fb;border-bottom:2px solid #C0CED1;"><th style="text-align:left;padding:8px;">카테고리</th><th style="text-align:center;padding:8px;">적합률</th><th style="text-align:center;padding:8px;">S</th><th style="text-align:center;padding:8px;">U</th><th style="text-align:center;padding:8px;">NA</th></tr></thead><tbody>';
+      for (const [type, result] of Object.entries(d.typeResults)) {
+        html += '<tr style="background:#f9f9fb;"><td colspan="5" style="padding:8px;font-weight:700;color:#D20015;font-size:12px;">' + result.typeName + '</td></tr>';
+        let catIdx = 0;
+        for (const [catName, cr] of Object.entries(result.categoryResults)) {
+          catIdx++;
+          const rate = cr.complianceRate;
+          const rColor = rate >= 90 ? '#22C55E' : rate >= 70 ? '#F59E0B' : '#D20015';
+          html += '<tr style="border-bottom:1px solid rgba(192,206,209,0.2);">';
+          html += '<td style="padding:8px;padding-left:16px;">' + catIdx + '. ' + _outCatLabel(catName) + '</td>';
+          html += '<td style="text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:8px;font-weight:600;color:' + rColor + ';background:' + rColor + '15;">' + rate.toFixed(1) + '%</span></td>';
+          html += '<td style="text-align:center;">' + cr.yesCount + '</td>';
+          html += '<td style="text-align:center;' + (cr.noCount > 0 ? 'color:#D20015;font-weight:600;' : '') + '">' + cr.noCount + '</td>';
+          html += '<td style="text-align:center;color:#9EA2A1;">' + cr.naCount + '</td>';
+          html += '</tr>';
+        }
+      }
+      html += '</tbody></table>';
+      html += '</div></div>';
+    }
+    tableArea.innerHTML = html;
+  }
+}
+
+// 외주 차트: 총 평균 + 카테고리별 적합률 (금번·직전 그룹 막대 — renderDivBarChart와 동일 스타일)
+function renderOutBarChart(d) {
+  ChartUtil.destroy('sdBarChart');
+  const ctx = document.getElementById('sdBarChart');
+  if (!ctx) return;
+  const labels = ['총 평균', ...d.catRates.map(c => _outCatLabel(c.name, 10))];
+  const currData = [d.overallRate || 0, ...d.catRates.map(c => c.rate || 0)];
+  const dlOpts = { display: true, color: '#1a1c1d', font: { size: 13, weight: '700' }, anchor: 'end', align: 'top', offset: 2, formatter: v => v ? v.toFixed(1) + '%' : '' };
+  const datasets = [{ label: '금번심사', data: currData, backgroundColor: '#D20015', borderRadius: 4, barPercentage: 0.9, categoryPercentage: 0.7, order: 1, datalabels: dlOpts }];
+  if (d.prevYear !== null) {
+    const prevData = [d.prevOverallRate || 0, ...d.catRates.map(c => (d.prevCatRates && d.prevCatRates[c.name]) || 0)];
+    datasets.push({ label: '직전심사', data: prevData, backgroundColor: '#3B82F6', borderRadius: 4, barPercentage: 0.9, categoryPercentage: 0.7, order: 1, datalabels: dlOpts });
+  }
+  chartInstances['sdBarChart'] = new Chart(ctx, {
+    type: 'bar', data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 28 } },
+      scales: { y: { min: 0, max: 100, ticks: { stepSize: 25, font: { size: 12 }, callback: v => v + '%' }, grid: { color: 'rgba(192,206,209,0.25)' } }, x: { grid: { display: false }, ticks: { font: { size: 12, weight: '500' }, color: '#303A3C' } } },
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 14, padding: 12 } }, datalabels: { display: false } }
+    },
+    plugins: [ChartDataLabels]
+  });
+}
+
 // --- Division Charts ---
 function renderDivBarChart(d) {
   ChartUtil.destroy('sdBarChart');
@@ -17464,6 +17697,8 @@ function renderStationDetail(year, station) {
   // v19.31.0: 운송본부 사용자는 실/본부 상세 2차 방어
   if (DIVISIONS[station] && !canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); if (typeof closeStationDetail==='function') closeStationDetail(); return; }
   if (DIVISIONS[station]) { renderDivisionDetail(year, station); return; }
+  // v19.37.0: 외주협력업체면 전용 상세 페이지 (binary 적합률 기반)
+  if (isOutsourcingTarget(station)) { renderOutsourcingDetail(year, station); return; }
 
   // 지점: 원본 차트 HTML 복원 (실/본부 뷰에서 돌아올 때)
   _saveStationDetailOriginalHTML();
