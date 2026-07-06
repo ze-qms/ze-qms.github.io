@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.37.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.38.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.37.1',
+  version: '19.38.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -10368,11 +10368,18 @@ function getExpectedTypesForStation(station) {
   return ALL_BRANCH_TYPES;
 }
 
+// v19.38.0: 수동 완료 — 점검표 등록이 불가능한 과거 심사(성숙도 점검 도입 전 등)를
+// admin이 일정 상세에서 완료로 지정. 일정(scheduleData) 항목의 manualComplete 플래그가 단일 소스.
+function isManuallyCompleted(year, name) {
+  return scheduleData.some(s => s.year == year && s.station === name && s.manualComplete);
+}
+
 // v19.34.0: 심사대상 '완료' 통일 헬퍼 — 배정된 점검표 전종이 작성 완료(부분저장 아님)돼야 완료.
 // calcScheduleStatus(completedCount>=totalExpected)·renderInputPendingStations와 동일 기준.
 // 이전 completedStations 등은 '!partial 레코드가 1개라도 있으면 완료'로 집계 → 1종만 입력된 대상이 완료로 새던 버그.
 function isTargetFullyAudited(year, name) {
   if (!name) return false;
+  if (isManuallyCompleted(year, name)) return true; // v19.38.0: 수동 완료 인정
   const expected = getExpectedTypesForStation(name);
   if (!expected || expected.length === 0) return false;
   return expected.every(type =>
@@ -10381,6 +10388,12 @@ function isTargetFullyAudited(year, name) {
 }
 
 function calcScheduleStatus(item) {
+  // v19.38.0: 수동 완료 — 미정(month 0)보다 우선 (완료 지정했는데 미정으로 뜨는 혼동 방지)
+  if (item.manualComplete) {
+    const et = getExpectedTypesForStation(item.station);
+    const done = et.filter(type => allData.some(d => d.year == item.year && (d.station === item.station || d.division === item.station) && d.type === type && !d.partial)).length;
+    return { status: 'completed', label: '완료(수동)', count: done, total: et.length };
+  }
   // 미정(일정 조정 중) — month 0
   if (item.month === 0) return { status: 'tbd', label: '미정', count: 0, total: 0 };
   const today = new Date();
@@ -10973,7 +10986,8 @@ function showScheduleStation(scheduleId) {
   html += `뒤로</button>`;
   html += `<div>`;
   html += `<h2 class="section-title" style="font-size:24px;">${item.displayName || item.station}</h2>`;
-  html += `<p class="section-subtitle">${item.year}년 ${item.month === 0 ? '미정' : item.month + '월'} &middot; <span class="badge-pill" style="${getScheduleStatusBadgeStyle(item.status)}">${calcScheduleStatus(item).label}</span></p>`;
+  const _hdrStatus = calcScheduleStatus(item); // v19.38.0: 배지 색·라벨을 동일 판정으로 통일 (이전엔 색은 item.status·라벨은 calc라 불일치 가능)
+  html += `<p class="section-subtitle">${item.year}년 ${item.month === 0 ? '미정' : item.month + '월'} &middot; <span class="badge-pill" style="${getScheduleStatusBadgeStyle(_hdrStatus.status)}">${_hdrStatus.label}</span></p>`;
   html += `</div>`;
   html += `</div>`;
 
@@ -11004,6 +11018,16 @@ function showScheduleStation(scheduleId) {
   html += `<span class="badge-pill" style="${getScheduleStatusBadgeStyle(statusResult.status)};font-size:14px;padding:6px 16px;">${statusResult.label}</span>`;
   html += `<span style="font-size:12px;color:#9EA2A1;">점검표 ${statusResult.count}/${statusResult.total || getExpectedTypesForStation(item.station).length}종 완료</span>`;
   html += `</div></div>`;
+
+  // v19.38.0: 수동 완료 처리 (admin 전용) — 점검표 등록이 불가능한 과거 심사(성숙도 점검 도입 전 등)
+  if (hasRole('admin')) {
+    html += '<div class="mb-4" style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:12px 14px;">';
+    html += `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:0;">`;
+    html += `<input type="checkbox" id="scheduleManualComplete" ${item.manualComplete ? 'checked' : ''} style="width:18px;height:18px;margin-top:1px;flex-shrink:0;accent-color:#D20015;">`;
+    html += `<span><span style="font-size:14px;font-weight:600;color:#303A3C;">수동 완료 처리</span>`;
+    html += `<span style="display:block;font-size:12px;color:#9EA2A1;margin-top:2px;">점검표 등록이 불가능한 과거 심사(성숙도 점검 도입 전 등)를 완료로 표시합니다. 상태 배지가 '완료(수동)'으로 바뀌고 홈·기간 리포트의 미완료 집계에서 빠집니다. 아래 저장 버튼으로 반영됩니다.</span></span>`;
+    html += `</label></div>`;
+  }
 
   // Audit cycle info
   const cycleInfo = STATION_AUDIT_CYCLES[item.station] || {};
@@ -11165,6 +11189,13 @@ function saveScheduleItem(scheduleId) {
 
   const note = document.getElementById('scheduleNote');
   if (note) item.note = note.value;
+
+  // v19.38.0: 수동 완료 플래그 — 해제 시 필드 자체를 제거해 데이터 청결 유지
+  const manualEl = document.getElementById('scheduleManualComplete');
+  if (manualEl) {
+    if (manualEl.checked) item.manualComplete = true;
+    else delete item.manualComplete;
+  }
 
   // 구분 (auditTarget) 저장
   const targetEl = document.getElementById('scheduleAuditTarget');
@@ -13211,6 +13242,7 @@ function renderInputPendingStations() {
     if (cat === 'branch' && (isDivision || isOutsourcing)) return;
     if (cat === 'division' && !isDivision) return;
     if (cat === 'outsourcing' && !isOutsourcing) return;
+    if (s.manualComplete) return; // v19.38.0: 수동 완료 일정은 작성 대기 목록에서 제외
 
     const expected = getExpectedTypesForStation(s.station);
     const completedTypes = expected.filter(type => {
