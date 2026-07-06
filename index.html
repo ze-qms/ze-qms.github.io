@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.37.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.37.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.37.0',
+  version: '19.37.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8519,7 +8519,7 @@ function renderOutsourcingStats() {
     .forEach(([station, v]) => {
       const rate = (v.s + v.u) > 0 ? (v.s / (v.s + v.u) * 100).toFixed(1) : '-';
       const rateColor = rate === '-' ? '#9EA2A1' : parseFloat(rate) >= 90 ? '#22C55E' : parseFloat(rate) >= 70 ? '#F59E0B' : '#D20015';
-      html += `<tr><td style="font-weight:600;">${station}<div style="font-size:11px;color:#9EA2A1;">${v.region || ''}</div></td>`;
+      html += `<tr><td style="font-weight:600;">${stationLink(year, station)}<div style="font-size:11px;color:#9EA2A1;">${v.region || ''}</div></td>`; // v19.37.1: 외주 상세 링크
       html += `<td style="text-align:center;color:#22C55E;font-weight:600;">${v.s}</td>`;
       html += `<td style="text-align:center;color:#D20015;font-weight:600;">${v.u}</td>`;
       html += `<td style="text-align:center;color:#9EA2A1;">${v.na}</td>`;
@@ -9941,7 +9941,7 @@ function renderOutsourcingAnalysis() {
       html += `<span style="font-size:13px;font-weight:600;color:#D20015;flex-shrink:0;margin-left:8px;">${p.count}건</span>`;
       html += `</div>`;
       html += `<div style="margin-top:4px;background:#f9f9fb;border-radius:3px;height:4px;"><div style="height:4px;border-radius:3px;width:${barW}%;background:#D20015;"></div></div>`;
-      html += `<div style="font-size:11px;color:#565A5B;margin-top:2px;">발생 업체: ${p.stations.join(', ')}</div>`;
+      html += `<div style="font-size:11px;color:#565A5B;margin-top:2px;">발생 업체: ${p.stations.map(s => stationLink(year, s)).join(', ')}</div>`; // v19.37.1: 외주 상세 링크
       html += `</div>`;
     });
   }
@@ -10593,7 +10593,7 @@ function renderSchedule() {
         const tb = (i === 0) ? topBorder : '';
         html += `<tr style="cursor:pointer;${rowBg}" onclick="setSchedulePhase(2,'${item.id}')">`;
         if (i === 0) html += `<td data-label="월" style="${monthCellStyle}" rowspan="${items.length}">${m}월</td>`;
-        const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;display:inline-block;padding:10px;margin:-10px;" title="상세 보기">&#9654;</span>` : '';
+        const sdIcon = ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;display:inline-block;padding:10px;margin:-10px;" title="상세 보기">&#9654;</span>`; // v19.37.1: 외주 제외 가드 제거 (외주 상세 페이지 신설)
         html += `<td data-label="대상" style="${tb}font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
         html += `<td data-label="심사원" style="${tb}font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
         html += `<td data-label="심사 기간" style="${tb}text-align:center;font-size:12px;">${dateStr}</td>`;
@@ -10621,7 +10621,7 @@ function renderSchedule() {
       const tb = (i === 0) ? tbdBorder : '';
       html += `<tr style="cursor:pointer;" onclick="setSchedulePhase(2,'${item.id}')">`;
       if (i === 0) html += `<td data-label="월" style="${tbdCellStyle}" rowspan="${tbdItems.length}">미정</td>`;
-      const sdIcon = (!isOutsourcing) ? ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;display:inline-block;padding:10px;margin:-10px;" title="상세 보기">&#9654;</span>` : '';
+      const sdIcon = ` <span onclick="event.stopPropagation();openStationDetail(${scheduleYear},'${item.station}')" style="cursor:pointer;color:#C0CED1;font-size:12px;vertical-align:middle;display:inline-block;padding:10px;margin:-10px;" title="상세 보기">&#9654;</span>`; // v19.37.1: 외주 제외 가드 제거
       html += `<td data-label="대상" style="${tb}font-weight:500;${nameColor}">${dotHtml}${item.displayName || item.station}${sdIcon}</td>`;
       html += `<td data-label="심사원" style="${tb}font-size:12px;color:#565A5B;">${item.auditors || '-'}</td>`;
       html += `<td data-label="심사 기간" style="${tb}text-align:center;font-size:12px;">${dateStr}</td>`;
@@ -17267,10 +17267,12 @@ function renderDivisionDetail(year, division) {
 }
 
 // --- Outsourcing Detail (v19.37.0) ---
-// 외주협력업체 판별: REGIONS '협력사(본사)' 소속 또는 레코드에 외주 표식 (실/본부는 제외)
+// 외주협력업체 판별: REGIONS '협력사(본사)' 소속 또는 레코드·일정에 외주 표식 (실/본부는 제외)
 function isOutsourcingTarget(station) {
   if (!station || DIVISIONS[station]) return false;
   if (getRegionForStation(station) === '협력사(본사)') return true;
+  // v19.37.1: 일정만 등록되고 점검 기록·커스텀 지점이 없는 외주 대상도 커버
+  if (scheduleData.some(s => s.station === station && (s.auditTarget === 'outsourcing' || s.region === '협력사(본사)'))) return true;
   return allData.some(d => d.station === station && (d.auditCategory === 'outsourcing' || d.region === '협력사(본사)'));
 }
 
