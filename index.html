@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.2</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.40.1',
+  version: '19.40.2',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7404,6 +7404,30 @@ function _prAvgCompliance(records) {
   if (!bn.length) return null;
   return bn.reduce((s, res) => s + res.complianceRate, 0) / bn.length;
 }
+// v19.40.2: 실/본부 적합률을 통계(renderDivisionStats overallRate)와 동일 방식으로 산출.
+//   본부별 (qa·safety·fsds 영역 적합률의 단순평균) → 본부별 값들의 단순평균. getExpectedTypesForStation 필터로
+//   기대 목록 밖 레코드(케이터링 FSDS 미실시 등) 제외까지 동일. 기존 _prAvgCompliance(division 레코드 flat 평균)와
+//   값이 달라 기간 리포트(94%)와 실/본부 심사 탭(93.5%)이 어긋났음 → 단일 헬퍼로 두 화면 일치 보장.
+function _prDivisionRate(records) {
+  const groups = {};
+  records.forEach(d => { const dv = d.division || d.station; (groups[dv] = groups[dv] || []).push(d); });
+  const rates = [];
+  for (const [dv, recs] of Object.entries(groups)) {
+    let qaS = 0, qaU = 0, safetyRate = null, fsdsRate = null;
+    const expected = getExpectedTypesForStation(dv);
+    recs.forEach(r => {
+      if (!expected.includes(r.type)) return;
+      const res = calculateBinaryScores(r.scores, getChecklist(r.type));
+      if (r.type && r.type.startsWith('qa_')) { qaS += res.yesCount; qaU += res.noCount; }
+      else if (r.type === 'safety_division') { safetyRate = res.complianceRate; }
+      else if (r.type === 'fsds') { fsdsRate = res.complianceRate; }
+    });
+    const qaRate = (qaS + qaU) > 0 ? (qaS / (qaS + qaU) * 100) : null;
+    const areas = [qaRate, safetyRate, fsdsRate].filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (areas.length > 0) rates.push(areas.reduce((a, b) => a + b, 0) / areas.length);
+  }
+  return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : null;
+}
 function _prDelta(curr, prev, digits, suffix, invert) {
   // invert=false: 증가가 좋음(녹색). 취약/CAR은 invert=true(감소가 좋음)
   if (curr == null) return '';
@@ -7528,7 +7552,7 @@ function renderPeriodReport() {
 
     // 2) 평균 성숙도/적합률
     const matCur = _prAvgMaturity(scoped.filter(isBranch)), matPre = _prAvgMaturity(prevScoped.filter(isBranch));
-    const divCur = _prAvgCompliance(scoped.filter(isDiv)), divPre = _prAvgCompliance(prevScoped.filter(isDiv));
+    const divCur = _prDivisionRate(scoped.filter(isDiv)), divPre = _prDivisionRate(prevScoped.filter(isDiv)); // v19.40.2: 통계 실/본부 심사와 동일 산식
     const outCur = _prAvgCompliance(scoped.filter(isOut)), outPre = _prAvgCompliance(prevScoped.filter(isOut));
 
     // 3) CAR 발행 — collectCarItems + monthOf 기반 기간 필터
@@ -7575,11 +7599,11 @@ function renderPeriodReport() {
 
     // KPI — v19.38.1: 실/본부·외주 적합률 카드 분리 (이전엔 실/본부 우선 fallback 단일 카드)
     const _showDivKpi = canSeeDivision(); // v19.31.0: 운송본부 사용자는 실/본부 카드 제외
-    const _rateVal = v => v != null ? v.toFixed(0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>';
+    const _rateVal = (v, digits) => v != null ? v.toFixed(digits || 0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>';
     html += `<div class="grid grid-cols-2 ${_showDivKpi ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mb-4">`;
     html += kpiCard('완료 심사', `${curDone}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(curDone, preDone, 0, '건', false), '#303A3C');
     html += kpiCard('지점 평균 성숙도', matCur != null ? matCur.toFixed(2) : '<span style="font-size:16px;color:#C0CED1;">-</span>', matCur != null ? _prDelta(matCur, matPre, 2, '', false) : '', matCur != null ? avgColor(matCur) : '#C0CED1');
-    if (_showDivKpi) html += kpiCard('실/본부 적합률', _rateVal(divCur), divCur != null ? _prDelta(divCur, divPre, 0, '%p', false) : '', '#0067C4');
+    if (_showDivKpi) html += kpiCard('실/본부 적합률', _rateVal(divCur, 1), divCur != null ? _prDelta(divCur, divPre, 1, '%p', false) : '', '#0067C4'); // v19.40.2: 소수 1자리 — 실/본부 심사 탭과 동일
     html += kpiCard('외주 적합률', _rateVal(outCur), outCur != null ? _prDelta(outCur, outPre, 0, '%p', false) : '', '#C2410C');
     html += kpiCard('CAR 발행', `${carItems.length}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(carItems.length, prevCarCount, 0, '건', true), '#D20015');
     html += `</div>`;
@@ -7690,7 +7714,7 @@ function renderPeriodReport() {
     // v19.31.0: 운송본부 사용자는 실/본부 제외 텍스트
     txt.push(`- 완료 심사: ${curDone}건 (지점 ${cur.branch.size}${canSeeDivision() ? ' · 실/본부 ' + cur.division.size : ''} · 외주 ${cur.outsourcing.size})`);
     if (matCur != null) txt.push(`- 지점 평균 성숙도: ${matCur.toFixed(2)}`);
-    if (_showDivKpi && divCur != null) txt.push(`- 실/본부 적합률: ${divCur.toFixed(0)}%`); // v19.38.1: 분리
+    if (_showDivKpi && divCur != null) txt.push(`- 실/본부 적합률: ${divCur.toFixed(1)}%`); // v19.38.1: 분리 / v19.40.2: 소수 1자리
     if (outCur != null) txt.push(`- 외주 적합률: ${outCur.toFixed(0)}%`);
     txt.push(`- CAR 발행: ${carItems.length}건 (Class1 ${clsCount.class1 || 0} · Class2 ${clsCount.class2 || 0} · Concern ${clsCount.concern || 0})`);
     txt.push('');
@@ -8376,7 +8400,7 @@ function renderDivisionStats() {
     totalS += dS; totalU += dU; totalNA += dNA;
   }
   const _validDivRates = Object.values(divScores).map(s => s.dRate).filter(v => v !== null && v !== undefined && !isNaN(v));
-  const overallRate = _validDivRates.length > 0 ? _validDivRates.reduce((a, b) => a + b, 0) / _validDivRates.length : 0;
+  const overallRate = _prDivisionRate(divData) ?? 0; // v19.40.2: 기간 리포트와 동일 헬퍼로 단일화 (값 불변 — 두 화면 영구 일치)
 
   html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">`;
   html += `<div class="apple-card" style="padding:16px;text-align:center;">`;
