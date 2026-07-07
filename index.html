@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.2</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.3</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.40.2',
+  version: '19.40.3',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7550,10 +7550,16 @@ function renderPeriodReport() {
     });
     const planTotal = schedThis.length;
 
-    // 2) 평균 성숙도/적합률
-    const matCur = _prAvgMaturity(scoped.filter(isBranch)), matPre = _prAvgMaturity(prevScoped.filter(isBranch));
-    const divCur = _prDivisionRate(scoped.filter(isDiv)), divPre = _prDivisionRate(prevScoped.filter(isDiv)); // v19.40.2: 통계 실/본부 심사와 동일 산식
-    const outCur = _prAvgCompliance(scoped.filter(isOut)), outPre = _prAvgCompliance(prevScoped.filter(isOut));
+    // 2) 평균 성숙도/적합률 — v19.40.3: 선택 기간 스냅샷 → 연초~기간말 누적 평균(YTD).
+    //   해당 기간만의 평균은 '지점 성숙도'·'실/본부 심사' 탭에서 보고, 기간 리포트는 누적으로 대표(사용자 지정).
+    //   전년도 같은 누적 구간(1~동일 끝월)과 비교. 완료 심사·CAR 건수는 해당 기간 그대로 유지.
+    const _kpiEndMo = statsPeriod.mode === 'year' ? _ytdEnd : _prEndMonth(); // 연간=금년 경과월(전년 동기) · 분기/월=선택 기간 끝월
+    const _leKpiEnd = d => { const mo = _statsRecordMonth(d); return mo != null && mo <= _kpiEndMo; };
+    const scopedYTD = scopedData().filter(d => d.year == year && !d.partial && _leKpiEnd(d));
+    const prevScopedYTD = scopedData().filter(d => d.year == prev.year && !d.partial && _leKpiEnd(d));
+    const matCur = _prAvgMaturity(scopedYTD.filter(isBranch)), matPre = _prAvgMaturity(prevScopedYTD.filter(isBranch));
+    const divCur = _prDivisionRate(scopedYTD.filter(isDiv)), divPre = _prDivisionRate(prevScopedYTD.filter(isDiv)); // v19.40.2: 통계 실/본부 심사와 동일 산식
+    const outCur = _prAvgCompliance(scopedYTD.filter(isOut)), outPre = _prAvgCompliance(prevScopedYTD.filter(isOut));
 
     // 3) CAR 발행 — collectCarItems + monthOf 기반 기간 필터
     const monthOf = {};
@@ -7593,7 +7599,7 @@ function renderPeriodReport() {
       + `<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">`
       + `<div><div style="font-size:13px;color:#9EA2A1;">기간 종합 리포트</div>`
       + `<h2 style="font-size:24px;font-weight:700;letter-spacing:-0.4px;color:#303A3C;margin:2px 0 0;">${periodLbl}</h2>`
-      + `<div style="font-size:13px;color:#9EA2A1;margin-top:4px;">전년 동기(${statsPeriod.mode === 'year' && _ytdEnd < 12 ? prev.year + '년 1~' + _ytdEnd + '월' : prev.label}) 대비 · 작성 중 제외</div></div>`
+      + `<div style="font-size:13px;color:#9EA2A1;margin-top:4px;">전년 동기(${statsPeriod.mode === 'year' && _ytdEnd < 12 ? prev.year + '년 1~' + _ytdEnd + '월' : prev.label}) 대비 · 작성 중 제외 · 성숙도·적합률은 1~${_kpiEndMo}월 누적 평균</div></div>`
       + `<button onclick="copyPeriodReport()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 16px;">📋 그룹웨어 복사</button>`
       + `</div></div>`;
 
@@ -7602,9 +7608,9 @@ function renderPeriodReport() {
     const _rateVal = (v, digits) => v != null ? v.toFixed(digits || 0) + '<span style="font-size:14px;color:#9EA2A1;font-weight:500;">%</span>' : '<span style="font-size:16px;color:#C0CED1;">-</span>';
     html += `<div class="grid grid-cols-2 ${_showDivKpi ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mb-4">`;
     html += kpiCard('완료 심사', `${curDone}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(curDone, preDone, 0, '건', false), '#303A3C');
-    html += kpiCard('지점 평균 성숙도', matCur != null ? matCur.toFixed(2) : '<span style="font-size:16px;color:#C0CED1;">-</span>', matCur != null ? _prDelta(matCur, matPre, 2, '', false) : '', matCur != null ? avgColor(matCur) : '#C0CED1');
-    if (_showDivKpi) html += kpiCard('실/본부 적합률', _rateVal(divCur, 1), divCur != null ? _prDelta(divCur, divPre, 1, '%p', false) : '', '#0067C4'); // v19.40.2: 소수 1자리 — 실/본부 심사 탭과 동일
-    html += kpiCard('외주 적합률', _rateVal(outCur), outCur != null ? _prDelta(outCur, outPre, 0, '%p', false) : '', '#C2410C');
+    html += kpiCard('지점 평균 성숙도 (누적)', matCur != null ? matCur.toFixed(2) : '<span style="font-size:16px;color:#C0CED1;">-</span>', matCur != null ? _prDelta(matCur, matPre, 2, '', false) : '', matCur != null ? avgColor(matCur) : '#C0CED1');
+    if (_showDivKpi) html += kpiCard('실/본부 적합률 (누적)', _rateVal(divCur, 1), divCur != null ? _prDelta(divCur, divPre, 1, '%p', false) : '', '#0067C4'); // v19.40.2: 소수 1자리 · v19.40.3: 누적 평균
+    html += kpiCard('외주 적합률 (누적)', _rateVal(outCur, 1), outCur != null ? _prDelta(outCur, outPre, 1, '%p', false) : '', '#C2410C'); // v19.40.3: 누적 평균 + 소수 1자리
     html += kpiCard('CAR 발행', `${carItems.length}<span style="font-size:14px;color:#9EA2A1;font-weight:500;"> 건</span>`, _prDelta(carItems.length, prevCarCount, 0, '건', true), '#D20015');
     html += `</div>`;
 
@@ -7713,9 +7719,9 @@ function renderPeriodReport() {
     txt.push(`■ 핵심 지표`);
     // v19.31.0: 운송본부 사용자는 실/본부 제외 텍스트
     txt.push(`- 완료 심사: ${curDone}건 (지점 ${cur.branch.size}${canSeeDivision() ? ' · 실/본부 ' + cur.division.size : ''} · 외주 ${cur.outsourcing.size})`);
-    if (matCur != null) txt.push(`- 지점 평균 성숙도: ${matCur.toFixed(2)}`);
-    if (_showDivKpi && divCur != null) txt.push(`- 실/본부 적합률: ${divCur.toFixed(1)}%`); // v19.38.1: 분리 / v19.40.2: 소수 1자리
-    if (outCur != null) txt.push(`- 외주 적합률: ${outCur.toFixed(0)}%`);
+    if (matCur != null) txt.push(`- 지점 평균 성숙도(누적): ${matCur.toFixed(2)}`);
+    if (_showDivKpi && divCur != null) txt.push(`- 실/본부 적합률(누적): ${divCur.toFixed(1)}%`); // v19.38.1 분리 / v19.40.2 소수1 / v19.40.3 누적
+    if (outCur != null) txt.push(`- 외주 적합률(누적): ${outCur.toFixed(1)}%`); // v19.40.3 누적 + 소수1
     txt.push(`- CAR 발행: ${carItems.length}건 (Class1 ${clsCount.class1 || 0} · Class2 ${clsCount.class2 || 0} · Concern ${clsCount.concern || 0})`);
     txt.push('');
     if (planTotal) txt.push(`■ 진척: 계획 ${planTotal} / 완료 ${statusTally.completed} · 진행 중 ${statusTally.in_progress} · 예정 ${statusTally.planned} · 지연/미완료 ${statusTally.delayed}`);
@@ -7792,10 +7798,20 @@ function _prMonthlyAgg(y) {
       return Math.round(cs / cn * f) / f;
     });
   };
+  // v19.40.3: 실/본부 적합률(comp)을 레코드 평균 → 본부별 영역평균 누적(_prDivisionRate)으로 —
+  //   KPI·통계 '실/본부 심사' 탭과 동일 산식. 월별 누적: 연초~해당 월 division 데이터로 재계산.
+  //   carry(표본 없는 달 값 유지)는 누적 특성상 자동, 미래 달(>carryEnd)·첫 심사 전은 null.
+  const compCum = compN.map((_, i) => {
+    const m = i + 1;
+    if (m > carryEnd) return null;
+    const ytdDiv = src.filter(d => d.auditCategory === 'division' && _statsRecordMonth(d) != null && _statsRecordMonth(d) <= m);
+    const v = _prDivisionRate(ytdDiv);
+    return v == null ? null : Math.round(v * 10) / 10;
+  });
   return {
     audits, car,
     mat: cumOf(matSum, matN, 2),
-    comp: cumOf(compSum, compN, 1),
+    comp: compCum, // v19.40.3: 본부영역평균 누적 (KPI·통계 탭과 일치)
     matN, compN // v19.39.0: 월별 실제 심사 표본 수 — 차트에서 carry 달(0) 반투명 표시용
   };
 }
