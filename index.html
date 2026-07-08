@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.7</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.41.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.40.7',
+  version: '19.41.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -8741,6 +8741,105 @@ function renderAuditorStats() {
   document.getElementById('auditorStatsContent').innerHTML = html;
 }
 
+// ── 점검표별 평균 (분석 > 지점 성숙도 카드 상세, v19.41.0) ─────────
+// 점검표 유형(항공사·여객·램프·VOC·지점 안전감사)별 월별/총 평균 + CAR 발행 건수.
+// 분석 탭 연도·기간 필터(analysisYear/analysisPeriod)를 따름(분기·월이면 해당 범위 월만 컬럼).
+// grade=성숙도 점수(N.NN)·binary=적합률(NN.N%)·CAR=건수로 단위가 달라 값·행 라벨에 병기.
+function renderChecklistAvgAnalysis() {
+  const year = parseInt(document.getElementById('analysisYear')?.value || new Date().getFullYear());
+  const startMo = analysisPeriod.mode === 'quarter' ? (analysisPeriod.quarter - 1) * 3 + 1
+                : analysisPeriod.mode === 'month' ? analysisPeriod.month : 1;
+  const endMo = analysisPeriod.mode === 'quarter' ? analysisPeriod.quarter * 3
+              : analysisPeriod.mode === 'month' ? analysisPeriod.month : 12;
+  const months = [];
+  for (let m = startMo; m <= endMo; m++) months.push(m);
+
+  const ROWS = [
+    { key: 'branch', label: '항공사', kind: 'grade' },
+    { key: 'pax', label: '여객협력사', kind: 'grade' },
+    { key: 'ramp', label: '램프협력사', kind: 'grade' },
+    { key: 'voc_monitoring', label: 'VOC 모니터링', kind: 'grade' },
+    { key: 'safety_branch', label: '지점 안전감사', kind: 'binary' },
+    { key: '__car__', label: '개선조치요구(CAR)', kind: 'car' }
+  ];
+
+  // 점검표 레코드: 해당 연도 · 작성 완료(!partial) · 협력사(본사) 제외, type별 그룹
+  const recsByType = {};
+  allData.filter(d => d.year == year && !d.partial && d.region !== '협력사(본사)').forEach(d => {
+    (recsByType[d.type] = recsByType[d.type] || []).push(d);
+  });
+
+  // CAR: 지점 대상만, 대상의 가장 이른 심사월로 매핑 (_prMonthlyAgg와 동일 정책)
+  const monthOf = {};
+  allData.filter(d => d.year == year).forEach(d => {
+    const mo = _statsRecordMonth(d);
+    if (mo != null && (monthOf[d.station] == null || mo < monthOf[d.station])) monthOf[d.station] = mo;
+  });
+  const carItems = (typeof collectCarItems === 'function' ? collectCarItems(year) : [])
+    .filter(it => it.targetType === 'branch'); // 지점 점검표 탭이므로 지점 CAR만
+
+  const _avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  const gradeAvg = recs => _avg(recs.map(d => calculateScores(d.scores, getChecklist(d.type)))
+    .filter(r => r.totalItems > 0).map(r => r.overallAverage));
+  const binaryAvg = recs => _avg(recs.map(d => calculateBinaryScores(d.scores, getChecklist(d.type)))
+    .filter(r => r.totalApplicable > 0).map(r => r.complianceRate));
+  const carCount = list => list.length || null;
+
+  const fmt = (kind, v) => {
+    if (kind === 'car') return v ? String(v) : '-';
+    if (v == null) return '-';
+    return kind === 'binary' ? v.toFixed(1) + '%' : v.toFixed(2);
+  };
+  const badge = (kind, v) => {
+    if (v == null || (kind === 'car' && !v)) return 'color:#C0CED1;';
+    if (kind === 'grade') return avgBadgeStyle(v);
+    if (kind === 'binary') return Scoring.getRateBadgeStyle(v);
+    return 'color:#303A3C;'; // car
+  };
+  const unitLabel = k => k === 'grade' ? '점수' : k === 'binary' ? '적합률' : '건';
+
+  const rowVals = row => {
+    const recs = recsByType[row.key] || [];
+    const cell = m => {
+      if (row.kind === 'car') return carCount(carItems.filter(it => monthOf[it.station] === m));
+      const mr = recs.filter(d => _statsRecordMonth(d) === m);
+      return row.kind === 'grade' ? gradeAvg(mr) : binaryAvg(mr);
+    };
+    const perMonth = months.map(cell);
+    let total;
+    if (row.kind === 'car') {
+      total = carCount(carItems.filter(it => { const mo = monthOf[it.station]; return mo != null && mo >= startMo && mo <= endMo; }));
+    } else {
+      const inPeriod = recs.filter(d => { const mo = _statsRecordMonth(d); return mo != null && mo >= startMo && mo <= endMo; });
+      total = row.kind === 'grade' ? gradeAvg(inPeriod) : binaryAvg(inPeriod);
+    }
+    return { perMonth, total };
+  };
+
+  const totalLabel = analysisPeriod.mode === 'year' ? '연간 총 평균' : '기간 총 평균';
+  let html = '';
+  html += `<div class="flex items-center gap-3 mb-4"><span style="font-size:13px;color:#9EA2A1;">${analysisPeriodLabel()} · 점검표별 평균</span></div>`;
+  html += `<div class="apple-card" style="padding:16px;overflow-x:auto;">`;
+  html += `<table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;">`;
+  html += `<thead><tr style="border-bottom:2px solid #C0CED1;">`;
+  html += `<th style="text-align:left;padding:10px 12px;position:sticky;left:0;background:#fff;z-index:1;">점검표 항목</th>`;
+  months.forEach(m => { html += `<th style="text-align:center;padding:10px 8px;color:#565A5B;font-weight:600;">${m}월</th>`; });
+  html += `<th style="text-align:center;padding:10px 14px;color:#D20015;font-weight:700;border-left:1px solid #E5E7EB;">${totalLabel}</th>`;
+  html += `</tr></thead><tbody>`;
+  ROWS.forEach(row => {
+    const { perMonth, total } = rowVals(row);
+    html += `<tr style="border-bottom:1px solid rgba(192,206,209,0.25);">`;
+    html += `<td style="text-align:left;padding:10px 12px;font-weight:600;color:#303A3C;position:sticky;left:0;background:#fff;">${row.label}<span style="font-size:11px;color:#9EA2A1;font-weight:400;margin-left:6px;">${unitLabel(row.kind)}</span></td>`;
+    perMonth.forEach(v => { html += `<td style="text-align:center;padding:8px;color:#565A5B;">${fmt(row.kind, v)}</td>`; });
+    html += `<td style="text-align:center;padding:8px 14px;border-left:1px solid #E5E7EB;"><span style="display:inline-block;padding:3px 10px;border-radius:8px;font-weight:700;${badge(row.kind, total)}">${fmt(row.kind, total)}</span></td>`;
+    html += `</tr>`;
+  });
+  html += `</tbody></table></div>`;
+  html += `<div style="font-size:11px;color:#9EA2A1;margin-top:10px;line-height:1.6;">· 성숙도 점검표(항공사·여객·램프·VOC)는 평균 점수(1~4점), 지점 안전감사는 적합률(%), 개선조치요구(CAR)는 지점 발행 건수입니다.<br>· 값은 해당 월 심사분의 평균이며, 심사가 없는 달은 '-'로 표시됩니다. 총 평균은 선택 기간 전체 심사분 기준입니다.</div>`;
+
+  document.getElementById('checklistAvgInner').innerHTML = html;
+}
+
 
 function toggleWeakDetail(id, header) {
   const el = document.getElementById(id);
@@ -9314,6 +9413,17 @@ function renderAnalysis() {
   html += `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div>`;
   html += `</div>`;
 
+  // Card 12: 점검표별 평균 (v19.41.0) — 점검표 유형별 월·연 평균 (클릭 시 펼침)
+  html += `<div class="apple-card" style="padding:20px;cursor:pointer;transition:all 0.15s ease;"
+    onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'"
+    onmouseout="this.style.boxShadow='none'"
+    onclick="toggleAnalysisDetail('analysisDetailChecklistAvg')">`;
+  html += `<div style="font-size:12px;color:#9EA2A1;margin-bottom:4px;">점검표별 평균</div>`;
+  html += `<div style="font-size:13px;color:#303A3C;margin-bottom:8px;">항목별 월·연 평균</div>`;
+  html += `<div><span style="font-size:24px;font-weight:600;color:#0067C4;">6</span><span style="font-size:12px;color:#9EA2A1;margin-left:4px;">종 점검표 · 월별/총 평균</span></div>`;
+  html += `<div style="font-size:11px;color:#D20015;margin-top:8px;">상세보기 ></div>`;
+  html += `</div>`;
+
   html += '</div>';
 
   // ===== Detail Sections (hidden by default) =====
@@ -9617,6 +9727,9 @@ function renderAnalysis() {
 
   // v19.26.1: CAR 분석을 접이식으로 전환 — 펼칠 때 renderCarAnalysis 호출 (차트 0크기 방지)
   html += `<div id="analysisDetailCar" class="hidden mb-6 fade-in" style="margin-top:20px;"><div id="carAnalysisInner"></div></div>`;
+
+  // Detail: 점검표별 평균 (v19.41.0)
+  html += `<div id="analysisDetailChecklistAvg" class="hidden mb-6 fade-in" style="margin-top:20px;"><div id="checklistAvgInner"></div></div>`;
 
   container.innerHTML = html;
 
@@ -10211,7 +10324,7 @@ function renderDivisionRiskChart(yearData) {
 
 function toggleAnalysisDetail(id) {
   // Close all other details
-  ['analysisDetail1','analysisDetail2','analysisDetail3','analysisDetail4','analysisDetail5','analysisDetail6','analysisDetail7','analysisDetail8','analysisDetail9','analysisDetailVoc','analysisDetailCar'].forEach(detailId => {
+  ['analysisDetail1','analysisDetail2','analysisDetail3','analysisDetail4','analysisDetail5','analysisDetail6','analysisDetail7','analysisDetail8','analysisDetail9','analysisDetailVoc','analysisDetailCar','analysisDetailChecklistAvg'].forEach(detailId => {
     if (detailId !== id) document.getElementById(detailId)?.classList.add('hidden');
   });
 
@@ -10239,6 +10352,7 @@ function toggleAnalysisDetail(id) {
     else if (id === 'analysisDetail9') renderRegionalRadarChart(data);
     else if (id === 'analysisDetailVoc') renderVocCompareChart(data);
     else if (id === 'analysisDetailCar') renderCarAnalysis(data.year, 'branch');
+    else if (id === 'analysisDetailChecklistAvg') renderChecklistAvgAnalysis();
   }
 }
 
