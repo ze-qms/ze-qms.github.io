@@ -1595,7 +1595,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.6</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.40.7</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1769,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.40.6',
+  version: '19.40.7',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -7986,10 +7986,10 @@ function renderStatsDashboard() {
   const intAvg = intlCount > 0 ? (intlAvg / intlCount).toFixed(2) : '0.00';
 
   // Completion rate: scheduleData 등록된 심사대상지 기준 (지점만)
-  const completedStations = new Set(yearData.filter(d => d.region !== '협력사(본사)').map(d => d.station).filter(n => n && isTargetFullyAudited(year, n))); // v19.34.0: 전종 완료만
+  // v19.40.7: 분자를 일정(scheduled) 순회로 직접 판정 — 수동 완료(manualComplete·레코드 0) 지점이 분모엔 있으나 분자(yearData 후보)엔 없어 누락되던 버그. isTargetFullyAudited가 수동 완료를 인정하므로 순회 대상만 scheduled로 바꾸면 반영됨.
   const scheduledBranchStations = new Set(scheduleData.filter(s => s.year == year && s.auditTarget === 'branch').map(s => s.station));
   const totalStations = scheduledBranchStations.size;
-  const completedScheduled = [...completedStations].filter(s => scheduledBranchStations.has(s)).length;
+  const completedScheduled = [...scheduledBranchStations].filter(s => isTargetFullyAudited(year, s)).length;
   const completionRate = totalStations > 0 ? ((completedScheduled / totalStations) * 100).toFixed(1) : '0.0';
 
   // Summary cards
@@ -12858,7 +12858,8 @@ function renderHome() {
   const completedStations = new Set(yearData.filter(d => d.auditCategory === 'branch' && d.region !== '협력사(본사)').map(d => d.station).filter(n => isTargetFullyAudited(currentYear, n)));
   const scheduledBranchHome = new Set(scheduleData.filter(s => s.year == currentYear && s.auditTarget === 'branch').map(s => s.station));
   const totalStations = scheduledBranchHome.size;
-  const completedScheduledHome = [...completedStations].filter(s => scheduledBranchHome.has(s)).length;
+  // v19.40.7: 완료율 분자는 일정 순회로 판정(수동 완료 레코드 0 포함). completedStations(위)는 최근 완료 리스트용이라 레코드 기반 유지.
+  const completedScheduledHome = [...scheduledBranchHome].filter(s => isTargetFullyAudited(currentYear, s)).length;
   const completionRate = totalStations > 0 ? ((completedScheduledHome / totalStations) * 100).toFixed(0) : '0';
 
   // Overall average (grade 방식만 집계, binary 방식 제외, 협력사 제외, VOC 모니터링 제외, 전항목 N/A 제외)
@@ -12882,7 +12883,8 @@ function renderHome() {
   const completedDivisions = new Set(divisionData.map(d => d.division || d.station).filter(n => isTargetFullyAudited(currentYear, n))); // v19.34.0: 전종 완료만
   const scheduledDivHome = new Set(scheduleData.filter(s => s.year == currentYear && s.auditTarget === 'division').map(s => s.station));
   const totalDivisions = scheduledDivHome.size || DIVISION_NAMES.length;
-  const completedDivScheduled = [...completedDivisions].filter(s => scheduledDivHome.size > 0 ? scheduledDivHome.has(s) : true).length;
+  // v19.40.7: 일정 등록된 실/본부는 일정 순회로 판정(수동 완료 포함), 일정 미등록 시 레코드 기반 completedDivisions 유지(기존 fallback).
+  const completedDivScheduled = scheduledDivHome.size > 0 ? [...scheduledDivHome].filter(s => isTargetFullyAudited(currentYear, s)).length : completedDivisions.size;
   const divCompletionRate = totalDivisions > 0 ? ((completedDivScheduled / totalDivisions) * 100).toFixed(0) : '0';
 
   // 실/본부 평균 적합률 계산
