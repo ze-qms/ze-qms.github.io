@@ -195,11 +195,15 @@ p, span, td, th, label, div {
 }
 .remark-toggle:hover { color: #565A5B; }
 .remark-input-wrap { margin-top: 4px; }
-.remark-input-wrap input {
+.remark-input-wrap input, .remark-input-wrap textarea {
   font-size: 13px; padding: 6px 12px; border: 1px solid rgba(192,206,209,0.4);
   border-radius: 8px; background: #fff; color: #303A3C; outline: none; width: 100%;
 }
-.remark-input-wrap input:focus { border-color: #D20015; }
+.remark-input-wrap textarea {
+  resize: none; overflow: hidden; min-height: 40px; line-height: 1.5;
+  font-family: inherit; box-sizing: border-box; display: block;
+}
+.remark-input-wrap input:focus, .remark-input-wrap textarea:focus { border-color: #D20015; }
 
 /* Accordion */
 .accordion-content {
@@ -835,7 +839,7 @@ select.apple-input {
     </div>
     <div style="font-size:12px;color:#566062;display:flex;align-items:center;gap:10px;font-family:'Inter',sans-serif;">
       <span id="headerUserName" style="color:#1a1c1d;font-weight:600;font-size:13px;"></span>
-      <span style="color:#a4000e;font-weight:600;">안전기획팀</span>
+      <span id="headerUserDept" style="color:#a4000e;font-weight:600;">안전보안실</span>
       <span id="envBadge" style="display:none;"></span>
       <span id="syncIndicator" style="display:none;"></span>
       <button onclick="doLogout()" style="background:none;border:1px solid rgba(0,0,0,0.12);color:#566062;border-radius:980px;padding:3px 12px;font-size:11px;cursor:pointer;font-weight:500;transition:all 0.15s;" onmouseover="this.style.borderColor='#a4000e';this.style.color='#a4000e'" onmouseout="this.style.borderColor='rgba(0,0,0,0.12)';this.style.color='#566062'">로그아웃</button>
@@ -861,7 +865,7 @@ select.apple-input {
         </button>
         <div id="mobileUserMenu" class="hidden" style="position:absolute;right:0;top:46px;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);padding:12px 16px;min-width:180px;z-index:100;">
           <div style="font-size:13px;font-weight:600;color:#303A3C;" id="headerUserNameMobile"></div>
-          <div style="font-size:11px;color:#D20015;font-weight:600;margin-top:2px;">안전기획팀</div>
+          <div id="headerUserDeptMobile" style="font-size:11px;color:#D20015;font-weight:600;margin-top:2px;">안전보안실</div>
           <div style="font-size:10px;color:#6E7273;margin-top:4px;"></div>
           <hr style="border:none;border-top:1px solid #f0f0f0;margin:8px 0;">
           <button onclick="doLogout()" style="background:none;border:none;color:#D20015;font-size:13px;cursor:pointer;padding:8px 0;">로그아웃</button>
@@ -1595,7 +1599,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.41.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.42.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1769,7 +1773,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.41.0',
+  version: '19.42.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -4067,6 +4071,12 @@ async function onLoginSuccess() {
   if (nameEl) nameEl.textContent = currentUser.name || currentUser.empNo;
   const nameElM = document.getElementById('headerUserNameMobile');
   if (nameElM) nameElM.textContent = currentUser.name || currentUser.empNo;
+  // v19.42.0: 소속 배지를 scope 기반으로 표시 (transport → 운송본부, 그 외 → 안전보안실)
+  const deptLabel = (currentUser.scope === 'transport') ? '운송본부' : '안전보안실';
+  const deptEl = document.getElementById('headerUserDept');
+  if (deptEl) deptEl.textContent = deptLabel;
+  const deptElM = document.getElementById('headerUserDeptMobile');
+  if (deptElM) deptElM.textContent = deptLabel;
   // 역할별 UI 적용
   applyRolePermissions(currentUser.role);
 
@@ -5481,16 +5491,16 @@ function renderChecklistItems(items, scores, remarks, type, options) {
       }
     }
 
-    // Collapsible remarks
+    // Collapsible remarks — v19.42.0: input → textarea (줄바꿈·자동 높이 확장)
     if (remarkVal) {
       html += `<div class="remark-input-wrap" style="margin-left:50px;margin-top:8px;">`;
-      html += `<input type="text" placeholder="비고 / 의견" value="${remarkVal.replace(/"/g, '&quot;')}" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)" style="font-size:14px;padding:10px 14px;">`;
+      html += `<textarea rows="1" placeholder="비고 / 의견" oninput="autoGrowRemark(this)" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)" style="font-size:14px;padding:10px 14px;">${_esc(remarkVal)}</textarea>`;
       html += `</div>`;
     } else {
       html += `<div style="margin-left:50px;margin-top:6px;">`;
-      html += `<span class="remark-toggle" style="font-size:13px;" onclick="${sp}this.style.display='none';this.nextElementSibling.style.display='block';">+ 비고</span>`;
+      html += `<span class="remark-toggle" style="font-size:13px;" onclick="${sp}this.style.display='none';this.nextElementSibling.style.display='block';var ta=this.nextElementSibling.querySelector('textarea');if(ta)ta.focus();">+ 비고</span>`;
       html += `<div class="remark-input-wrap" style="display:none;">`;
-      html += `<input type="text" placeholder="비고 / 의견" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)" style="font-size:14px;padding:10px 14px;">`;
+      html += `<textarea rows="1" placeholder="비고 / 의견" oninput="autoGrowRemark(this)" onchange="${sp}${options.remarkHandler}('${item.id}', this.value)" style="font-size:14px;padding:10px 14px;"></textarea>`;
       html += `</div></div>`;
     }
     html += `</div>`;
@@ -5567,6 +5577,19 @@ function renderChecklist() {
     ci++;
   }
   updateTotalDisplay();
+  autoGrowAllRemarks(area); // v19.42.0: 값 있는 비고 textarea 초기 높이 맞춤
+}
+
+// v19.42.0: 비고 textarea 자동 높이 확장 (내용 줄 수만큼 세로로 늘어남)
+function autoGrowRemark(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+function autoGrowAllRemarks(container) {
+  const root = container || document;
+  const list = root.querySelectorAll('.remark-input-wrap textarea');
+  list.forEach(ta => { if (ta.value) autoGrowRemark(ta); });
 }
 
 function toggleAccordion(id, header) {
@@ -6762,6 +6785,7 @@ function startGroupTypeEdit(gIdx, type) {
   html += `<button onclick="event.stopPropagation();saveGroupTypeEdit(${gIdx},'${type}')" class="pill-btn pill-btn-primary">저장</button>`;
   html += `</div>`;
   container.innerHTML = html;
+  autoGrowAllRemarks(container); // v19.42.0: 편집 모드 비고 textarea 초기 높이 맞춤
 }
 
 function saveGroupTypeEdit(gIdx, type) {
@@ -18422,7 +18446,7 @@ Object.assign(window, {
   setEditScore, setEditScoreNA, setEditRemark,
   showTypeDetail, startGroupEditCommon, cancelGroupEdit, saveGroupCommon,
   startGroupTypeEdit, saveGroupTypeEdit, deleteGroupType,
-  navigateToInput, renderScoreView,
+  navigateToInput, renderScoreView, autoGrowRemark,
   // Stats tab
   switchStatsSubTab, renderStatsDashboard, toggleWeakDetail,
   renderOverviewStats, onStatsPeriodSelChange, onAnalysisPeriodSelChange, renderPeriodReport, copyPeriodReport,
