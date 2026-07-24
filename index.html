@@ -1599,7 +1599,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.42.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.43.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1773,7 +1773,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.42.0',
+  version: '19.43.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -4119,8 +4119,28 @@ async function onLoginSuccess() {
 
 function hasRole(minRole) {
   if (!currentUser) return false;
-  const hierarchy = { viewer: 0, auditor: 1, admin: 2 };
+  // v19.43.0: 품질담당자(qmanager)를 심사원과 관리자 사이에 배치
+  const hierarchy = { viewer: 0, auditor: 1, qmanager: 2, admin: 3 };
   return (hierarchy[currentUser.role] || 0) >= (hierarchy[minRole] || 0);
+}
+// v19.43.0: 역할 한글 라벨 (단일 소스)
+function roleLabelOf(role) {
+  return role === 'admin' ? '관리자' : role === 'qmanager' ? '품질담당자' : role === 'auditor' ? '심사원' : '뷰어';
+}
+// v19.43.0: 일정 편집(심사원 배정·일정 추가/수정/삭제/드래그) 권한 — 품질담당자 이상
+function canManageSchedule() { return hasRole('qmanager'); }
+// v19.43.0: 대상(station)이 실/본부(division)인지 판별
+function isDivisionStation(station) {
+  return typeof DIVISIONS !== 'undefined' && !!DIVISIONS[station];
+}
+// v19.43.0: 점검표 삭제 권한 — 관리자 + 품질담당자(운송본부 scope면 실/본부 제외). 심사원은 불가.
+function canDeleteAssessment(year, station) {
+  if (hasRole('admin')) return true;
+  if (currentUser && currentUser.role === 'qmanager') {
+    if (isDivisionStation(station) && !canSeeDivision()) return false;
+    return true;
+  }
+  return false;
 }
 
 function requireRole(minRole) {
@@ -4150,8 +4170,9 @@ function scopedSchedule() {
   return scheduleData.filter(s => s.auditTarget !== 'division' && !(typeof DIVISIONS !== 'undefined' && DIVISIONS[s.station]));
 }
 
-// v19.31.1: 점검표 작성/수정 권한 — 해당 (연도·대상) 일정에 배정된 심사원 + admin만.
-// 배정 정보(일정 또는 심사원)가 없으면 admin만 가능(엄격 정책).
+// v19.31.1: 점검표 작성/수정 권한 — 해당 (연도·대상) 일정에 배정된 심사원 + admin.
+// v19.43.0: 품질담당자(qmanager)는 배정 무관 전체 편집(운송본부 scope면 실/본부 제외).
+// 배정 정보(일정 또는 심사원)가 없으면 admin·품질담당자만 가능(심사원은 엄격 차단).
 function getAssignedAuditorNames(year, station) {
   const sched = (typeof scheduleData !== 'undefined' ? scheduleData : []).find(s => s.year == year && s.station === station);
   if (!sched || !sched.auditors) return [];
@@ -4159,6 +4180,11 @@ function getAssignedAuditorNames(year, station) {
 }
 function canEditAssessment(year, station) {
   if (hasRole('admin')) return true;
+  // v19.43.0: 품질담당자는 배정 무관 전체 편집. 단 운송본부 scope면 실/본부(division) 대상 제외 → 지점만
+  if (currentUser && currentUser.role === 'qmanager') {
+    if (isDivisionStation(station) && !canSeeDivision()) return false;
+    return true;
+  }
   if (!hasRole('auditor')) return false;
   const profile = (typeof getMyAuditorProfile === 'function') ? getMyAuditorProfile() : null;
   if (!profile || !profile.name) return false;
@@ -4192,7 +4218,8 @@ function applyRolePermissions(role) {
   tabButtons.forEach(btn => {
     const tabIdx = parseInt(btn.dataset.tab);
     if (role === 'viewer' && [1, 5, 6].includes(tabIdx)) btn.style.display = 'none';
-    else if (role === 'auditor' && tabIdx === 6) btn.style.display = 'none';
+    // v19.43.0: 심사원·품질담당자는 관리 탭(6) 숨김
+    else if ((role === 'auditor' || role === 'qmanager') && tabIdx === 6) btn.style.display = 'none';
     else btn.style.display = '';
   });
   // v18.0.0: 모바일 톱니바퀴 — admin만 표시
@@ -4216,7 +4243,7 @@ async function renderUserManagement() {
     html += '<div style="display:flex;flex-direction:column;gap:10px;">';
     for (const [uid, u] of userEntries) {
       const isSelf = uid === currentUser.uid;
-      const roleLabel = u.role==='admin'?'관리자':u.role==='auditor'?'심사원':'뷰어';
+      const roleLabel = roleLabelOf(u.role);
       html += `<div style="background:#f9fafb;border-radius:12px;padding:14px;border:1px solid rgba(192,206,209,0.3);">`;
       html += `<div class="flex items-center justify-between" style="margin-bottom:8px;">`;
       html += `<div><span style="font-size:15px;font-weight:${isSelf?'700':'600'};color:#303A3C;">${u.name || '-'}${isSelf?' <span style="font-size:11px;color:#9EA2A1;">(나)</span>':''}</span>`;
@@ -4226,8 +4253,8 @@ async function renderUserManagement() {
       html += `<div class="flex items-center gap-2">`;
       html += `<span style="font-size:12px;color:#565A5B;">역할:</span>`;
       html += `<select onchange="changeUserRole('${uid}',this.value)" class="apple-input" style="padding:4px 10px;font-size:12px;flex:1;max-width:140px;" ${isSelf?'disabled':''}>`;
-      ['admin','auditor','viewer'].forEach(r => {
-        html += `<option value="${r}" ${u.role===r?'selected':''}>${r==='admin'?'관리자':r==='auditor'?'심사원':'뷰어'}</option>`;
+      ['admin','qmanager','auditor','viewer'].forEach(r => {
+        html += `<option value="${r}" ${u.role===r?'selected':''}>${roleLabelOf(r)}</option>`;
       });
       html += `</select></div>`;
       // v19.31.0: 데이터 범위(scope) — 운송본부는 실/본부 데이터 비노출
@@ -4249,7 +4276,7 @@ async function renderUserManagement() {
     html += `<div class="grid grid-cols-1 md:grid-cols-4 gap-3">`;
     html += `<div><label class="apple-label">사번</label><input id="newUserEmpNo" type="text" inputmode="numeric" maxlength="7" placeholder="7자리" class="apple-input"></div>`;
     html += `<div><label class="apple-label">이름</label><input id="newUserName" type="text" placeholder="이름" class="apple-input"></div>`;
-    html += `<div><label class="apple-label">역할</label><select id="newUserRole" class="apple-input"><option value="auditor">심사원</option><option value="viewer">뷰어</option><option value="admin">관리자</option></select></div>`;
+    html += `<div><label class="apple-label">역할</label><select id="newUserRole" class="apple-input"><option value="auditor">심사원</option><option value="qmanager">품질담당자</option><option value="viewer">뷰어</option><option value="admin">관리자</option></select></div>`;
     html += `<div><label class="apple-label">범위</label><select id="newUserScope" class="apple-input"><option value="all">전체(안전보안실)</option><option value="transport">운송본부(지점만)</option></select></div>`;
     html += `<div><label class="apple-label">관리자 비밀번호</label><input id="newUserAdminPw" type="password" placeholder="본인 비밀번호" class="apple-input"></div>`;
     html += `<div style="display:flex;align-items:flex-end;"><button onclick="createNewUser()" class="pill-btn pill-btn-primary" style="width:100%;">추가</button></div>`;
@@ -4509,8 +4536,8 @@ function normalizeScheduleTargets() {
       modified = true;
     }
   });
-  // v19.33.0: 일정 Firebase 저장은 admin만 (Rules admin 전용화에 따른 auditor PERMISSION_DENIED 회피). 비admin은 로컬 정규화만.
-  if (modified && (typeof hasRole !== 'function' || hasRole('admin'))) saveSchedule();
+  // v19.33.0: 일정 Firebase 저장은 admin만. v19.43.0: 품질담당자 이상으로 완화(일정 편집 권한자).
+  if (modified && (typeof canManageSchedule !== 'function' || canManageSchedule())) saveSchedule();
 }
 
 function saveSchedule() {
@@ -5893,8 +5920,8 @@ function saveAssessment() {
   unsavedChanges = false;
 
   // 심사 일정 데이터에도 동기화
-  // v19.33.0: 점검표 저장 시 일정 동기화는 admin만 (일반 심사원의 일정 자가변경 우회 차단)
-  const schedItem = hasRole('admin') ? scheduleData.find(s => s.year == year && s.station === station) : null;
+  // v19.33.0: 점검표 저장 시 일정 동기화는 admin만 (일반 심사원의 일정 자가변경 우회 차단). v19.43.0: 품질담당자 이상으로 완화.
+  const schedItem = canManageSchedule() ? scheduleData.find(s => s.year == year && s.station === station) : null;
   if (schedItem) {
     if (auditor) schedItem.auditors = auditor;
     if (auditDateStart) schedItem.dateStart = auditDateStart;
@@ -6451,9 +6478,9 @@ function renderScoreViewTable() {
 function renderGroupReadOnlyDetail(gIdx, group) {
   const anyRecord = Object.values(group.types).find(e => e.record)?.record;
   let html = '';
-  // v19.33.1: 수정 버튼은 배정 심사원+admin, 삭제 버튼은 admin만 노출
+  // v19.33.1: 수정 버튼은 배정 심사원+admin. v19.43.0: 삭제 버튼은 관리자+품질담당자(canDeleteAssessment)
   const _canEdit = canEditAssessment(group.year, group.station);
-  const _isAdmin = hasRole('admin');
+  const _isAdmin = canDeleteAssessment(group.year, group.station);
 
   // 공통 심사 정보 (allData 우선, 없으면 scheduleData에서 보완)
   const schedItem = scheduleData.find(s => s.year == group.year && s.station === group.station);
@@ -6711,8 +6738,8 @@ function saveGroupCommon(gIdx) {
   saveAllData();
 
   // 심사 일정 데이터에도 동기화
-  // v19.33.0: 점수조회 그룹 저장 시 일정 동기화도 admin만
-  const schedItem = hasRole('admin') ? scheduleData.find(s => s.year == group.year && s.station === group.station) : null;
+  // v19.33.0: 점수조회 그룹 저장 시 일정 동기화도 admin만. v19.43.0: 품질담당자 이상으로 완화.
+  const schedItem = canManageSchedule() ? scheduleData.find(s => s.year == group.year && s.station === group.station) : null;
   if (schedItem) {
     schedItem.auditors = auditor;
     schedItem.dateStart = dateStart;
@@ -6811,10 +6838,11 @@ function saveGroupTypeEdit(gIdx, type) {
 }
 
 function deleteGroupType(gIdx, type) {
-  if (!requireRole('admin')) return;
   const groups = getViewGroups();
   const group = groups[gIdx];
   if (!group) return;
+  // v19.43.0: 삭제 권한 = 관리자 + 품질담당자(운송본부 scope면 실/본부 제외)
+  if (!canDeleteAssessment(group.year, group.station)) { showToast('삭제 권한이 없습니다.', 'error'); return; }
   const entry = group.types[type];
   if (!entry || !entry.record) return;
 
@@ -7004,9 +7032,10 @@ function saveEdit(idx) {
 }
 
 function deleteRecord(idx) {
-  if (!requireRole('admin')) return;
   const entry = viewEntries[idx];
   if (!entry || !entry.record) return;
+  // v19.43.0: 삭제 권한 = 관리자 + 품질담당자(운송본부 scope면 실/본부 제외)
+  if (!canDeleteAssessment(entry.year, entry.station)) { showToast('삭제 권한이 없습니다.', 'error'); return; }
 
   if (!confirm(`${entry.station} ${getTypeLabel(entry.type)} 점검 데이터를 삭제하시겠습니까?`)) return;
   if (!confirm('삭제된 데이터는 복구할 수 없습니다. 정말 삭제하시겠습니까?')) return;
@@ -10716,7 +10745,7 @@ function renderSchedule() {
     html += `<button onclick="window._scheduleViewYear=${y};renderSchedule();" style="border:none;border-radius:980px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;letter-spacing:-0.224px;background:${isActive?'#D20015':'transparent'};color:${isActive?'#fff':'#565A5B'};">${y}년</button>`;
   });
   html += '</div></div>';
-  if (hasRole('admin')) { // v19.33.0: \uc77c\uc815 \ucd94\uac00/\ubcc0\uacbd\uc740 admin \uc804\uc6a9
+  if (canManageSchedule()) { // v19.33.0: \uc77c\uc815 \ucd94\uac00/\ubcc0\uacbd. v19.43.0: \ud488\uc9c8\ub2f4\ub2f9\uc790 \uc774\uc0c1
     html += '<div style="display:flex;gap:8px;flex-shrink:0;">';
     html += '<button onclick="setSchedulePhase(4)" class="pill-btn" style="background:#fff;color:#303A3C;border:1px solid #E5E7EB;">\u2195 \uc77c\uc815 \ubcc0\uacbd</button>';
     html += '<button onclick="showAddScheduleForm()" class="pill-btn pill-btn-primary">+ \uc77c\uc815 \ucd94\uac00</button>';
@@ -10976,7 +11005,7 @@ function _revertScheduleReorderSilently() {
   _clearScheduleReorderSnapshot();
 }
 function saveScheduleReorderChanges() {
-  if (!requireRole('admin')) return; // v19.33.0: 일정 재정렬(드래그) 저장은 admin 전용
+  if (!requireRole('qmanager')) return; // v19.43.0: 일정 재정렬(드래그) 저장은 품질담당자 이상
   if (!window._scheduleReorderDirty) { setSchedulePhase(1); return; }
   try {
     saveSchedule();
@@ -11009,7 +11038,7 @@ function remapYearMonth(dateStr, year, newMonth) {
   return `${year}-${pad(newMonth)}-${pad(day)}`;
 }
 function renderScheduleReorder() {
-  if (!hasRole('admin')) { setSchedulePhase(1); return; } // v19.33.0: 일정 변경 화면은 admin 전용
+  if (!hasRole('qmanager')) { setSchedulePhase(1); return; } // v19.43.0: 일정 변경 화면은 품질담당자 이상
   const currentYear = new Date().getFullYear();
   if (typeof window._scheduleViewYear === 'undefined') window._scheduleViewYear = currentYear;
   const scheduleYear = window._scheduleViewYear;
@@ -11168,7 +11197,7 @@ function initScheduleDragDrop() {
   });
 }
 function handleChipDrop(evt) {
-  if (!hasRole('admin')) return; // v19.33.0: 일정 드래그 이동은 admin 전용
+  if (!hasRole('qmanager')) return; // v19.43.0: 일정 드래그 이동은 품질담당자 이상
   const newMonth = parseInt(evt.to && evt.to.dataset ? evt.to.dataset.month : '-1', 10);
   const id = evt.item && evt.item.dataset ? evt.item.dataset.id : null;
   if (!id || !Number.isFinite(newMonth) || newMonth < 0 || newMonth > 12) {
@@ -11244,8 +11273,8 @@ function showScheduleStation(scheduleId) {
   html += `<span style="font-size:12px;color:#9EA2A1;">점검표 ${statusResult.count}/${statusResult.total || getExpectedTypesForStation(item.station).length}종 완료</span>`;
   html += `</div></div>`;
 
-  // v19.38.0: 수동 완료 처리 (admin 전용) — 점검표 등록이 불가능한 과거 심사(성숙도 점검 도입 전 등)
-  if (hasRole('admin')) {
+  // v19.38.0: 수동 완료 처리 — 점검표 등록이 불가능한 과거 심사(성숙도 점검 도입 전 등). v19.43.0: 품질담당자 이상
+  if (canManageSchedule()) {
     html += '<div class="mb-4" style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:12px 14px;">';
     html += `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:0;">`;
     html += `<input type="checkbox" id="scheduleManualComplete" ${item.manualComplete ? 'checked' : ''} style="width:18px;height:18px;margin-top:1px;flex-shrink:0;accent-color:#D20015;">`;
@@ -11289,8 +11318,8 @@ function showScheduleStation(scheduleId) {
   html += `<input type="text" id="scheduleNote" class="apple-input" value="${item.note || ''}" placeholder="비고 사항 입력">`;
   html += '</div>';
 
-  // Save button — v19.33.0: 일정 편집(저장/삭제)은 admin 전용. 비admin은 보기만.
-  if (hasRole('admin')) {
+  // Save button — v19.33.0: 일정 편집(저장/삭제). v19.43.0: 품질담당자 이상. 그 외는 보기만.
+  if (canManageSchedule()) {
     html += '<div class="flex gap-3">';
     html += `<button onclick="saveScheduleItem('${scheduleId}')" class="pill-btn pill-btn-primary">저장</button>`;
     html += `<button onclick="scheduleGoBack();" class="pill-btn pill-btn-outline">취소</button>`;
@@ -11393,12 +11422,12 @@ function showScheduleStation(scheduleId) {
 
   // Render auditor picker after DOM is updated
   setTimeout(() => {
-    renderAuditorPicker('scheduleAuditorPicker', item.auditors || '', !hasRole('admin')); // v19.33.1: 일정 심사원 편집은 admin만
+    renderAuditorPicker('scheduleAuditorPicker', item.auditors || '', !canManageSchedule()); // v19.33.1: 일정 심사원 편집. v19.43.0: 품질담당자 이상
   }, 0);
 }
 
 function saveScheduleItem(scheduleId) {
-  if (!requireRole('admin')) return; // v19.33.0: 일정 수정은 admin 전용
+  if (!requireRole('qmanager')) return; // v19.43.0: 일정 수정은 품질담당자 이상
   const item = scheduleData.find(s => s.id === scheduleId);
   if (!item) { showToast('일정을 찾을 수 없습니다.', 'error'); return; }
 
@@ -11476,12 +11505,12 @@ function saveScheduleItem(scheduleId) {
 }
 
 function showAddScheduleForm() {
-  if (!requireRole('admin')) return; // v19.33.0: 일정 추가 진입은 admin 전용
+  if (!requireRole('qmanager')) return; // v19.43.0: 일정 추가 진입은 품질담당자 이상
   setSchedulePhase(3);
 }
 
 function saveNewSchedule() {
-  if (!requireRole('admin')) return; // v19.33.0: 일정 추가는 admin 전용
+  if (!requireRole('qmanager')) return; // v19.43.0: 일정 추가는 품질담당자 이상
   const stationSelect = document.getElementById('newScheduleStation').value;
   const newStationName = document.getElementById('newStationName');
   const newStationInput = newStationName ? newStationName.value.trim() : '';
@@ -11547,7 +11576,7 @@ function saveNewSchedule() {
 }
 
 function deleteScheduleItem(scheduleId) {
-  if (!requireRole('admin')) return; // v19.33.0: 일정 삭제는 admin 전용
+  if (!requireRole('qmanager')) return; // v19.43.0: 일정 삭제는 품질담당자 이상
   const item = scheduleData.find(s => s.id === scheduleId);
   if (!item) return;
   if (!confirm(`${item.displayName || item.station} (${item.month === 0 ? '미정' : item.month + '월'}) 일정을 삭제하시겠습니까?`)) return;
@@ -11627,7 +11656,7 @@ function toggleNewStationForm() {
 }
 
 function toggleTbdSchedule() {
-  if (!requireRole('admin')) return; // v19.33.0: 일정 추가 폼 컨트롤은 admin 전용
+  if (!requireRole('qmanager')) return; // v19.43.0: 일정 추가 폼 컨트롤은 품질담당자 이상
   const statusSel = document.getElementById('newScheduleStatus');
   const isTbd = !!statusSel && statusSel.value === 'tbd';
   ['newScheduleDateStart', 'newScheduleDateEnd'].forEach(elId => {
@@ -11641,7 +11670,7 @@ function toggleTbdSchedule() {
 }
 
 function renderAddScheduleForm() {
-  if (!hasRole('admin')) { setSchedulePhase(1); return; } // v19.33.0: 일정 추가 화면은 admin 전용
+  if (!hasRole('qmanager')) { setSchedulePhase(1); return; } // v19.43.0: 일정 추가 화면은 품질담당자 이상
   const statusLabels = getScheduleStatusLabels();
   let html = '';
 
