@@ -1599,7 +1599,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.44.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.44.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1776,7 +1776,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.44.0',
+  version: '19.44.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3110,9 +3110,11 @@ function loadAuditors() {
     SafeStorage.set(AUDITOR_STORAGE_KEY, auditorList); // local만
   }
 }
-function saveAuditors() {
+// v19.44.1: saveAuditors({ removed: [...] }) — 삭제된 심사원 키를 명시적으로 제거.
+// 인자 없이 부르면 현재 목록의 키만 갱신하고 서버의 다른 키는 건드리지 않는다.
+function saveAuditors(opts) {
   SafeStorage.set(AUDITOR_STORAGE_KEY, auditorList);
-  firebaseSaveAuditors();
+  return firebaseSaveAuditors(opts);
 }
 function getAuditorActivityCount(auditorName, year) {
   // 같은 지점은 1회로 카운트 (지점 단위 통합)
@@ -4460,9 +4462,10 @@ function loadCustomStations() {
   mergeCustomStations();
 }
 
-function saveCustomStations() {
+// v19.44.1: saveCustomStations({ removed: [...] }) — 삭제된 대상 키를 명시적으로 제거.
+function saveCustomStations(opts) {
   SafeStorage.set(CUSTOM_STATIONS_KEY, customStations);
-  firebaseSaveCustomStations();
+  return firebaseSaveCustomStations(opts);
 }
 
 function mergeCustomStations() {
@@ -4603,9 +4606,10 @@ function normalizeScheduleTargets() {
   if (modified && (typeof canManageSchedule !== 'function' || canManageSchedule())) saveSchedule();
 }
 
-function saveSchedule() {
+// v19.44.1: saveSchedule({ removed: [...] }) — 삭제된 일정 키를 명시적으로 제거.
+function saveSchedule(opts) {
   SafeStorage.set(SCHEDULE_STORAGE_KEY, scheduleData);
-  firebaseSaveSchedule();
+  return firebaseSaveSchedule(opts);
 }
 
 // ============================================================================
@@ -11775,7 +11779,8 @@ function saveNewSchedule() {
     auditTarget: auditTarget
   });
 
-  saveSchedule();
+  // v19.44.1: 중복 일정을 덮어쓴 경우 기존 키를 명시적으로 제거 (새 일정은 새 id로 등록됨)
+  saveSchedule({ removed: duplicate ? [duplicate] : [] });
   showToast(`${station} ${year}년 심사 일정이 등록되었습니다.`, 'success');
   setSchedulePhase(1);
 }
@@ -11789,7 +11794,7 @@ function deleteScheduleItem(scheduleId) {
   const idx = scheduleData.findIndex(s => s.id === scheduleId);
   if (idx >= 0) {
     scheduleData.splice(idx, 1);
-    saveSchedule();
+    saveSchedule({ removed: [item] }); // v19.44.1: 삭제 키 명시
     showToast('일정이 삭제되었습니다.', 'info');
     setSchedulePhase(1);
   }
@@ -12076,11 +12081,9 @@ function deleteCustomStation(idx) {
 
   // customStations에서 제거
   customStations.splice(idx, 1);
-  saveCustomStations();
-  // v19.40.5: 마지막 1건 삭제 시 빈 배열은 wipe 가드에 막히므로, admin의 의도적 삭제(confirm 완료)만 명시적 remove
-  if (firebaseDb && customStations.length === 0 && _fbFirstSync.customStations) {
-    dbRef('customStations').remove().catch(e => console.warn('customStations remove failed:', e));
-  }
+  // v19.44.1: 삭제 키를 명시 전달 — update 방식에서는 이것이 유일한 삭제 반영 경로.
+  // (v19.40.5의 '마지막 1건일 때만 remove()' 특례는 removed 처리로 일반화되어 제거)
+  saveCustomStations({ removed: [cs] });
 
   // 드롭다운 갱신
   populateStationDropdown();
@@ -12429,7 +12432,7 @@ function deleteAuditor(idx) {
   if (!a) return;
   if (!confirm(`${a.name} 심사원을 삭제하시겠습니까?`)) return;
   auditorList.splice(idx, 1);
-  saveAuditors();
+  saveAuditors({ removed: [a] }); // v19.44.1: 삭제 키 명시
   renderAuditorList();
   showToast('심사원이 삭제되었습니다.', 'info');
 }
@@ -12965,47 +12968,62 @@ function firebaseSaveAllData() {
   } catch(e) { console.error('Firebase save assessments failed:', e); showToast('심사 데이터 Firebase 저장 실패', 'error'); return Promise.reject(e); }
 }
 
-function firebaseSaveAuditors() {
+function firebaseSaveAuditors(opts) {
   if (!firebaseDb) return Promise.resolve();
   // v19.12.9: WIPE 방어
   if (!_fbFirstSync.auditors) {
     console.warn('firebaseSaveAuditors blocked: auditors first sync not done');
     return Promise.resolve();
   }
-  if (auditorList.length === 0) {
+  // v19.44.1: 삭제만 전달된 경우(마지막 1건 삭제 등)는 통과 — 해당 키만 제거하므로 wipe가 아님
+  if (auditorList.length === 0 && !(opts && opts.removed && opts.removed.length)) {
     console.warn('firebaseSaveAuditors blocked: auditorList is empty');
     return Promise.resolve();
   }
   try {
-    const obj = {};
-    auditorList.forEach((a, i) => {
-      obj[a.id || ('A' + i)] = a;
-    });
-    return dbRef('auditors').set(obj);
+    // v19.44.1: set(전체 교체) → update(키 단위 갱신).
+    // set은 내 화면에 아직 없는 다른 사람의 신규 심사원까지 지웠음. update는 내가 보낸 키만 바꾸고
+    // 삭제는 opts.removed로만 일어나므로, 모르는 항목이 사라지지 않는다.
+    // 단 id 없는 legacy 레코드가 섞여 있으면 키가 인덱스에 의존해 불안정 → 종전 방식 유지.
+    if (auditorList.some(a => !a || !a.id)) {
+      const obj = {};
+      auditorList.forEach((a, i) => { obj[a.id || ('A' + i)] = a; });
+      return dbRef('auditors').set(obj);
+    }
+    const updates = {};
+    auditorList.forEach(a => { updates[a.id] = a; });
+    ((opts && opts.removed) || []).forEach(a => { if (a && a.id) updates[a.id] = null; });
+    return dbRef('auditors').update(updates);
   } catch(e) { console.warn('Firebase save auditors failed:', e); showToast('심사원 Firebase 저장 실패', 'error'); return Promise.reject(e); }
 }
 
-function firebaseSaveSchedule() {
+function firebaseSaveSchedule(opts) {
   if (!firebaseDb) return Promise.resolve();
   // v19.12.9: WIPE 방어
   if (!_fbFirstSync.schedule) {
     console.warn('firebaseSaveSchedule blocked: schedule first sync not done');
     return Promise.resolve();
   }
-  if (scheduleData.length === 0) {
+  // v19.44.1: 삭제만 전달된 경우는 통과 (해당 키만 제거)
+  if (scheduleData.length === 0 && !(opts && opts.removed && opts.removed.length)) {
     console.warn('firebaseSaveSchedule blocked: scheduleData is empty');
     return Promise.resolve();
   }
   try {
-    const obj = {};
-    scheduleData.forEach(s => {
-      obj[s.id] = s;
-    });
-    return dbRef('schedule').set(obj);
+    // v19.44.1: set(전체 교체) → update(키 단위 갱신). 삭제는 opts.removed로만.
+    if (scheduleData.some(s => !s || !s.id)) {
+      const obj = {};
+      scheduleData.forEach(s => { obj[s.id] = s; });
+      return dbRef('schedule').set(obj); // id 누락 데이터가 있으면 종전 방식
+    }
+    const updates = {};
+    scheduleData.forEach(s => { updates[s.id] = s; });
+    ((opts && opts.removed) || []).forEach(s => { if (s && s.id) updates[s.id] = null; });
+    return dbRef('schedule').update(updates);
   } catch(e) { console.warn('Firebase save schedule failed:', e); showToast('일정 Firebase 저장 실패', 'error'); return Promise.reject(e); }
 }
 
-function firebaseSaveCustomStations() {
+function firebaseSaveCustomStations(opts) {
   if (!firebaseDb) return Promise.resolve();
   // v19.40.5: WIPE 방어 — 다른 3개 save 함수(v19.12.9)와 동일 가드가 이 함수만 누락돼 있었음.
   // mergeCustomStations()가 로드 직후(첫 sync 전) 호출할 수 있는 경로 실재.
@@ -13013,17 +13031,19 @@ function firebaseSaveCustomStations() {
     console.warn('firebaseSaveCustomStations blocked: customStations first sync not done');
     return Promise.resolve();
   }
-  // 빈 배열 set({}) 차단 — 의도적 전체 삭제는 deleteCustomStation의 명시적 remove() 경로 사용
-  if (customStations.length === 0) {
+  // 빈 배열 차단 — v19.44.1: 삭제가 명시된 경우는 통과(해당 키만 제거하므로 wipe가 아님)
+  if (customStations.length === 0 && !(opts && opts.removed && opts.removed.length)) {
     console.warn('firebaseSaveCustomStations blocked: customStations is empty');
     return Promise.resolve();
   }
   try {
-    const obj = {};
-    customStations.forEach((cs, i) => {
-      obj[cs.station.replace(/[.#$/\[\]]/g, '_')] = cs;
-    });
-    return dbRef('customStations').set(obj);
+    // v19.44.1: set(전체 교체) → update(키 단위 갱신). 다른 사람이 방금 추가한 지점이 사라지지 않는다.
+    // 삭제는 반드시 opts.removed로 전달해야 반영됨(종전엔 set이 삭제를 대신 반영했음).
+    const _csKey = cs => String(cs.station).replace(/[.#$/\[\]]/g, '_');
+    const updates = {};
+    customStations.forEach(cs => { updates[_csKey(cs)] = cs; });
+    ((opts && opts.removed) || []).forEach(cs => { if (cs && cs.station) updates[_csKey(cs)] = null; });
+    return dbRef('customStations').update(updates);
   } catch(e) { console.warn('Firebase save custom stations failed:', e); showToast('커스텀 지점 Firebase 저장 실패', 'error'); return Promise.reject(e); }
 }
 
