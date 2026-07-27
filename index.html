@@ -1599,7 +1599,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.43.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.44.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1634,6 +1634,9 @@ select.apple-input {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         점검표 보기
       </button>
+      <!-- v19.44.0: 심사 결과 확정(잠금) — 배지는 전원, 버튼은 관리자만 -->
+      <span id="sdLockBadge" class="badge-pill" style="display:none;background:rgba(210,0,21,0.12);color:#D20015;font-size:12px;white-space:nowrap;"></span>
+      <button type="button" id="sdLockBtn" onclick="toggleTargetLock()" class="pill-btn pill-btn-outline" style="display:none;padding:6px 14px;font-size:13px;align-items:center;gap:6px;"></button>
       <div id="sdDownloadMenu" class="sd-download-menu" style="position:relative;">
         <button type="button" onclick="toggleSdDownloadMenu(event)" class="pill-btn pill-btn-outline" style="padding:6px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1773,7 +1776,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.43.0',
+  version: '19.44.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -3183,6 +3186,45 @@ const CARCATS_STORAGE_KEY = 'eastar_' + APP_ENV + '_car_categories';
 const CHECKLISTMASTER_STORAGE_KEY = 'eastar_' + APP_ENV + '_checklist_master';
 // v19.11.0: 심사 메모(Audit Memo) 저장소 — { [year_station]: { [memoId]: memo } }
 const MEMO_STORAGE_KEY = 'eastar_' + APP_ENV + '_memos';
+// v19.44.0: 심사 결과 확정(잠금) 저장소 — { [year_station]: {lockedAt, lockedBy, lockedByName} }
+// 확정된 대상은 관리자 외 작성·수정·삭제 불가. 대상(지점/실·본부) 단위이며 그 대상의 점검표 전체에 적용.
+const LOCKS_STORAGE_KEY = 'eastar_' + APP_ENV + '_locked_targets';
+let lockedTargets = {};
+
+function _lockKey(year, station) {
+  return `${year}_${station}`.replace(/[.#$/\[\]]/g, '_');
+}
+function getTargetLock(year, station) {
+  return (lockedTargets && lockedTargets[_lockKey(year, station)]) || null;
+}
+function isTargetLocked(year, station) {
+  return !!getTargetLock(year, station);
+}
+function loadLockedTargets() {
+  lockedTargets = SafeStorage.get(LOCKS_STORAGE_KEY, {}) || {};
+}
+// 확정/해제 — 관리자 전용
+async function setTargetLock(year, station, locked) {
+  if (!requireRole('admin')) return false;
+  const key = _lockKey(year, station);
+  if (locked) {
+    const info = { lockedAt: new Date().toISOString(), lockedByName: _myDisplayName() };
+    lockedTargets[key] = info;
+    SafeStorage.set(LOCKS_STORAGE_KEY, lockedTargets);
+    if (firebaseDb) {
+      try { await dbRef('lockedTargets/' + key).set(info); }
+      catch(e) { console.error('잠금 저장 실패:', e); showToast('확정 상태 저장 실패', 'error'); return false; }
+    }
+  } else {
+    delete lockedTargets[key];
+    SafeStorage.set(LOCKS_STORAGE_KEY, lockedTargets);
+    if (firebaseDb) {
+      try { await dbRef('lockedTargets/' + key).remove(); }
+      catch(e) { console.error('잠금 해제 실패:', e); showToast('확정 해제 저장 실패', 'error'); return false; }
+    }
+  }
+  return true;
+}
 
 // Station Detail state
 let stationDetailPreviousTab = 0;
@@ -3673,7 +3715,7 @@ async function createBackup(trigger) {
   // ID: 2026-05-06_18-00-00Z (path-safe — Firebase가 . / # $ [ ] 못 씀)
   const id = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19) + 'Z';
 
-  const [aSnap, auSnap, sSnap, csSnap, mSnap, cSnap, rmSnap, ciSnap, ccSnap, cmSnap] = await Promise.all([
+  const [aSnap, auSnap, sSnap, csSnap, mSnap, cSnap, rmSnap, ciSnap, ccSnap, cmSnap, ltSnap] = await Promise.all([
     dbRef('assessments').once('value'),
     dbRef('auditors').once('value'),
     dbRef('schedule').once('value'),
@@ -3684,6 +3726,7 @@ async function createBackup(trigger) {
     dbRef('carItems').once('value'),
     dbRef('carCategories').once('value'),
     dbRef('checklistMaster').once('value'),
+    dbRef('lockedTargets').once('value'), // v19.44.0
   ]);
 
   const cnt = (v) => v && typeof v === 'object' ? Object.keys(v).length : 0;
@@ -3719,6 +3762,7 @@ async function createBackup(trigger) {
       carItems: ciSnap.val() || {},
       carCategories: ccSnap.val() || null,
       checklistMaster: cmSnap.val() || null,
+      lockedTargets: ltSnap.val() || null, // v19.44.0
     }
   };
 
@@ -3779,6 +3823,7 @@ async function restoreFromBackup(backupId) {
     dbRef('carItems').set(data.carItems || {}),
     dbRef('carCategories').set(data.carCategories || null),
     dbRef('checklistMaster').set(data.checklistMaster || null),
+    dbRef('lockedTargets').set(data.lockedTargets || null), // v19.44.0
   ]);
   showToast('복원 완료. 페이지를 새로고침합니다...', 'success');
   setTimeout(() => location.reload(), 2000);
@@ -3948,7 +3993,7 @@ async function loadFreshDataFromFirebase() {
   const result = { ok: true, counts: {} };
   try {
     // v19.14.0: 5개 path 병렬 fetch (memos 추가 — 신규 디바이스에서 메모도 즉시 표시)
-    const [assessmentsSnap, auditorsSnap, scheduleSnap, customStationsSnap, memosSnap, reportMetaSnap, checklistMasterSnap] = await Promise.all([
+    const [assessmentsSnap, auditorsSnap, scheduleSnap, customStationsSnap, memosSnap, reportMetaSnap, checklistMasterSnap, lockedTargetsSnap] = await Promise.all([
       dbRef('assessments').once('value'),
       dbRef('auditors').once('value'),
       dbRef('schedule').once('value'),
@@ -3956,7 +4001,14 @@ async function loadFreshDataFromFirebase() {
       dbRef('memos').once('value'),
       dbRef('reportMeta').once('value'),
       dbRef('checklistMaster').once('value'),
+      dbRef('lockedTargets').once('value'), // v19.44.0: 확정(잠금) 상태
     ]);
+
+    // v19.44.0: lockedTargets — 로그인 즉시 확정 상태 반영(권한 판정에 쓰이므로 먼저 적용)
+    const lockedData = lockedTargetsSnap.val();
+    lockedTargets = (lockedData && typeof lockedData === 'object') ? lockedData : {};
+    try { SafeStorage.set(LOCKS_STORAGE_KEY, lockedTargets); } catch(e) {}
+    result.counts.lockedTargets = Object.keys(lockedTargets).length;
 
     // assessments
     const assessmentsData = assessmentsSnap.val();
@@ -4085,6 +4137,7 @@ async function onLoginSuccess() {
   if (allData.length === 0) loadAllData();
   if (auditorList.length === 0) loadAuditors();
   if (scheduleData.length === 0) loadSchedule();
+  loadLockedTargets(); // v19.44.0: 확정(잠금) 캐시 — 직후 loadFreshDataFromFirebase가 서버 값으로 갱신
   if (customStations.length === 0) loadCustomStations();
   else mergeCustomStations();
   populateStationDropdown();
@@ -4136,6 +4189,8 @@ function isDivisionStation(station) {
 // v19.43.0: 점검표 삭제 권한 — 관리자 + 품질담당자(운송본부 scope면 실/본부 제외). 심사원은 불가.
 function canDeleteAssessment(year, station) {
   if (hasRole('admin')) return true;
+  // v19.44.0: 확정(잠금)된 대상은 관리자만 삭제 가능
+  if (typeof isTargetLocked === 'function' && isTargetLocked(year, station)) return false;
   if (currentUser && currentUser.role === 'qmanager') {
     if (isDivisionStation(station) && !canSeeDivision()) return false;
     return true;
@@ -4180,6 +4235,8 @@ function getAssignedAuditorNames(year, station) {
 }
 function canEditAssessment(year, station) {
   if (hasRole('admin')) return true;
+  // v19.44.0: 확정(잠금)된 심사 결과는 관리자만 수정 가능 — 심사원·품질담당자 모두 차단
+  if (typeof isTargetLocked === 'function' && isTargetLocked(year, station)) return false;
   // v19.43.0: 품질담당자는 배정 무관 전체 편집. 단 운송본부 scope면 실/본부(division) 대상 제외 → 지점만
   if (currentUser && currentUser.role === 'qmanager') {
     if (isDivisionStation(station) && !canSeeDivision()) return false;
@@ -4191,6 +4248,12 @@ function canEditAssessment(year, station) {
   return getAssignedAuditorNames(year, station).includes(profile.name);
 }
 function assignmentDeniedMessage(year, station) {
+  // v19.44.0: 확정(잠금) 사유를 우선 안내
+  if (typeof isTargetLocked === 'function' && isTargetLocked(year, station)) {
+    const lock = getTargetLock(year, station);
+    return `확정된 심사 결과입니다. 수정하려면 관리자에게 확정 해제를 요청하십시오.`
+      + (lock && lock.lockedByName ? ` (확정: ${lock.lockedByName})` : '');
+  }
   const names = getAssignedAuditorNames(year, station);
   return names.length
     ? `작성·수정 권한이 없습니다. 이 심사 배정: ${names.join(', ')} (관리자 문의)`
@@ -4944,9 +5007,16 @@ function loadAllData() {
   }
 }
 
-function saveAllData() {
+// v19.44.0: Firebase 기록 범위를 호출부가 지정.
+//   saveAllData({ records: [...] })  → 해당 레코드만 저장 (점검표 작성·수정 등 일상 경로)
+//   saveAllData({ removed: [...] })  → 해당 레코드만 삭제
+//   saveAllData()                    → 전체 교체 (JSON 가져오기·초기화·마이그레이션 등 의도적 전체 조작)
+// localStorage는 항상 전체 스냅샷(로컬 캐시라 다른 사용자에게 영향 없음).
+function saveAllData(opts) {
   SafeStorage.set(STORAGE_KEY, allData);
-  firebaseSaveAllData();
+  if (opts && opts.records) return firebaseSaveRecords(opts.records);
+  if (opts && opts.removed) return firebaseRemoveRecords(opts.removed);
+  return firebaseSaveAllData();
 }
 
 function findRecord(year, station, type, company) {
@@ -5350,7 +5420,11 @@ function inputShowTypes() {
   let html = '';
   if (!canEdit) {
     const names = getAssignedAuditorNames(selectedYear, selectedStation);
-    const note = names.length
+    // v19.44.0: 확정(잠금)된 대상이면 그 사유를 우선 안내
+    const _lock = getTargetLock(selectedYear, selectedStation);
+    const note = _lock
+      ? `<b>확정된 심사 결과</b>입니다. 관리자만 수정할 수 있습니다.${_lock.lockedByName ? ` (확정: ${_lock.lockedByName})` : ''} 수정이 필요하면 관리자에게 확정 해제를 요청하십시오.`
+      : names.length
       ? `이 심사는 <b>${names.join(', ')}</b>에게 배정되어 있습니다. 배정된 심사원 또는 관리자만 작성·수정할 수 있습니다.`
       : '이 대상에 배정된 심사 일정이 없습니다. 관리자가 일정·심사원을 배정해야 작성할 수 있습니다.';
     html += `<div class="apple-card" style="padding:16px;margin-bottom:14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);">`
@@ -5403,6 +5477,8 @@ function selectChecklistType(type) {
   selectedType = type;
   const company = type !== 'branch' ? (HANDLING_COMPANIES[type]?.[selectedStation] || '') : undefined;
   const record = findRecord(selectedYear, selectedStation, type, company || undefined);
+  // v19.44.0: 편집 시작 시점 기준값 보관 — 저장 직전 서버와 비교해 동시 편집 충돌 감지
+  setEditBaseline(selectedYear, selectedStation, type, company || undefined, record);
 
   currentChecklist = getChecklist(type);
   if (record) {
@@ -5854,7 +5930,90 @@ function clearChecklistInput() {
   showToast('점검표 내용을 초기화했습니다. 새로 작성 후 저장해 주세요.', 'success');
 }
 
-function saveAssessment() {
+// ── v19.44.0: 동시 편집 충돌 감지 ────────────────────────────────────────────
+// 저장 시 레코드에 최종 수정자·시각을 남기고, 편집을 연 시점의 값을 baseline으로 보관한다.
+// 저장 직전 서버 값을 직접 조회해 baseline과 다르면(= 그 사이 다른 사람이 저장) 확인을 받는다.
+let _editBaselines = {}; // assessmentKey → 편집 시작 시점의 updatedAt
+
+function _myDisplayName() {
+  const p = (typeof getMyAuditorProfile === 'function') ? getMyAuditorProfile() : null;
+  if (p && p.name) return p.name;
+  if (currentUser && currentUser.name) return currentUser.name;
+  if (currentUser && currentUser.empNo) return currentUser.empNo;
+  return '알 수 없음';
+}
+function _stampRecord(record) {
+  record.updatedAt = new Date().toISOString();
+  record.updatedBy = _myDisplayName();
+  return record;
+}
+// 편집 진입 시 호출. record가 없으면(신규 작성) null을 baseline으로 둔다.
+function setEditBaseline(year, station, type, company, record) {
+  const key = makeKey(year, station, type, company).replace(/[.#$/\[\]]/g, '_');
+  _editBaselines[key] = record ? (record.updatedAt || null) : null;
+}
+function clearEditBaseline(record) {
+  if (record) delete _editBaselines[_assessmentKey(record)];
+}
+function _fmtEditTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  } catch(e) { return ''; }
+}
+// 저장해도 되는지 확인. true면 진행, false면 저장 취소.
+async function confirmNoEditConflict(record) {
+  if (!firebaseDb || !_fbFirstSync.assessments) return true;
+  const key = _assessmentKey(record);
+  if (!(key in _editBaselines)) return true; // baseline 없음 → 검사 생략
+  const base = _editBaselines[key];
+  let remote = null;
+  try {
+    remote = (await dbRef('assessments/' + key).once('value')).val();
+  } catch(e) {
+    console.warn('충돌 확인 실패(오프라인 등) — 저장을 진행합니다:', e);
+    return true; // 확인 자체가 불가능하면 저장을 막지 않음
+  }
+  if (!remote) return true; // 서버에 없음(삭제됨) → 새로 기록
+  const remoteAt = remote.updatedAt || null;
+  if (remoteAt === base) return true; // 내가 연 이후 변경 없음
+  const who = remote.updatedBy || '다른 사용자';
+  const when = _fmtEditTime(remoteAt);
+  return confirm(
+    `${who}님이 ${when ? when + '에 ' : '방금 '}이 점검표를 저장했습니다.\n\n`
+    + `지금 저장하면 그 내용을 내 화면의 내용으로 덮어씁니다.\n\n`
+    + `확인 = 덮어쓰기\n취소 = 저장 취소 (화면을 닫았다 다시 열면 최신 내용이 보입니다)`
+  );
+}
+
+// v19.43.1: '작성 중'(partial) 판정 단일 소스.
+// 이전엔 saveAssessment(점검 입력 탭)에만 판정이 있어, 점수 조회 화면에서 이어 작성·수정해도
+// partial 플래그가 그대로 남아 완료·점수 집계에서 계속 제외되던 버그가 있었음.
+function judgeRecordPartial(scores, checklist) {
+  if (!checklist) return null; // 점검표 정의를 찾지 못하면 판정 불가
+  const s = scores || {};
+  let total = 0;
+  const missing = [];
+  for (const catData of Object.values(checklist)) {
+    for (const item of (catData.items || [])) {
+      total++;
+      if (s[item.id] === undefined || s[item.id] === null) missing.push(item.id);
+    }
+  }
+  return { total, missing, entered: total - missing.length, isPartial: missing.length > 0 };
+}
+
+// v19.43.1: 레코드에 작성 중 여부 반영 — 전 항목 입력 시 플래그 제거(완료 전환).
+// 판정 불가(점검표 정의 없음)면 기존 플래그를 보존하고 null 반환.
+function applyPartialFlag(record, checklist) {
+  const judged = judgeRecordPartial(record.scores, checklist);
+  if (!judged) return null;
+  if (judged.isPartial) record.partial = true; else delete record.partial;
+  return judged;
+}
+
+async function saveAssessment() {
   if (!requireRole('auditor')) return;
   // v19.31.1: 배정 심사원/admin만 저장 가능 (작성·수정 공통 authoritative 가드)
   if (!canEditAssessment(selectedYear, selectedStation)) {
@@ -5874,19 +6033,12 @@ function saveAssessment() {
 
   // 전체 항목 입력 여부 검증
   if (!currentChecklist) { showToast('점검표를 선택해주세요.', 'warning'); return; }
-  let totalItems = 0;
-  const missingItems = [];
-  for (const [catName, catData] of Object.entries(currentChecklist)) {
-    for (const item of catData.items) {
-      totalItems++;
-      if (currentScores[item.id] === undefined || currentScores[item.id] === null) {
-        missingItems.push(item.id);
-      }
-    }
-  }
+  // v19.43.1: 작성 중 판정을 공용 헬퍼로 단일화 (점수 조회 수정 경로와 동일 기준)
+  const judged = judgeRecordPartial(currentScores, currentChecklist);
+  const missingItems = judged.missing;
   // v19.28.0: 부분 저장 허용 — 미입력 항목이 있어도 입력된 내용은 저장(현장 임시저장).
   // 단 1건도 입력 안 했으면 저장 의미가 없으므로 차단.
-  const enteredCount = totalItems - missingItems.length;
+  const enteredCount = judged.entered;
   if (enteredCount === 0) {
     showToast('입력된 항목이 없습니다. 1개 이상 입력 후 저장해주세요.', 'warning');
     return;
@@ -5911,12 +6063,17 @@ function saveAssessment() {
   // v19.28.0: 부분 저장이면 '작성 중' 표시. 전 항목 입력 시 partial 플래그 제거(이어쓰기 후 완료 처리)
   if (isPartial) record.partial = true; else delete record.partial;
 
+  // v19.44.0: 내가 편집을 연 뒤 다른 사람이 같은 점검표를 저장했는지 확인
+  if (!(await confirmNoEditConflict(record))) { showToast('저장을 취소했습니다.', 'info'); return; }
+  _stampRecord(record);
+
   if (existIdx >= 0) {
     allData[existIdx] = record;
   } else {
     allData.push(record);
   }
-  saveAllData();
+  saveAllData({ records: [record] }); // v19.44.0: 이 점검표 1건만 기록 (타인 데이터 덮어쓰기 방지)
+  clearEditBaseline(record);
   unsavedChanges = false;
 
   // 심사 일정 데이터에도 동기화
@@ -6307,7 +6464,8 @@ function renderScoreViewTable() {
       const isDivision = group.auditCategory === 'division';
       const rowId = `viewGroup_${gIdx}`;
       const anyRecord = Object.values(group.types).find(e => e.record)?.record;
-      const completedTypes = Object.values(group.types).filter(e => e.record && !MONITORING_BRANCH_TYPES.includes(e.type));
+      // v19.43.1: 작성 중(부분 저장)은 완료로 세지 않음 — 홈·통계의 완료 기준(!partial)과 일치시킴
+      const completedTypes = Object.values(group.types).filter(e => e.record && !e.record.partial && !MONITORING_BRANCH_TYPES.includes(e.type));
       const status = makeStatusBadge(completedTypes, Object.values(group.types).filter(e => !MONITORING_BRANCH_TYPES.includes(e.type)).length);
 
       // allData 우선, 없으면 scheduleData 보완
@@ -6389,7 +6547,8 @@ function renderScoreViewTable() {
       const gIdx = groups.indexOf(group);
       const rowId = `viewGroup_${gIdx}`;
       const anyRecord = Object.values(group.types).find(e => e.record)?.record;
-      const completedTypes = Object.values(group.types).filter(e => e.record && !MONITORING_BRANCH_TYPES.includes(e.type));
+      // v19.43.1: 작성 중(부분 저장)은 완료로 세지 않음 — 홈·통계의 완료 기준(!partial)과 일치시킴
+      const completedTypes = Object.values(group.types).filter(e => e.record && !e.record.partial && !MONITORING_BRANCH_TYPES.includes(e.type));
       const totalTypes = Object.values(group.types).filter(e => !MONITORING_BRANCH_TYPES.includes(e.type)).length;
       const status = makeStatusBadge(completedTypes, totalTypes);
 
@@ -6444,7 +6603,8 @@ function renderScoreViewTable() {
       const gIdx = groups.indexOf(group);
       const rowId = `viewGroup_${gIdx}`;
       const anyRecord = Object.values(group.types).find(e => e.record)?.record;
-      const completedTypes = Object.values(group.types).filter(e => e.record && !MONITORING_BRANCH_TYPES.includes(e.type));
+      // v19.43.1: 작성 중(부분 저장)은 완료로 세지 않음 — 홈·통계의 완료 기준(!partial)과 일치시킴
+      const completedTypes = Object.values(group.types).filter(e => e.record && !e.record.partial && !MONITORING_BRANCH_TYPES.includes(e.type));
       const totalTypes = Object.values(group.types).filter(e => !MONITORING_BRANCH_TYPES.includes(e.type)).length;
       const status = makeStatusBadge(completedTypes, totalTypes);
 
@@ -6495,7 +6655,11 @@ function renderGroupReadOnlyDetail(gIdx, group) {
     html += `<div class="apple-card" style="padding:14px;margin-bottom:8px;">`;
     html += `<div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2">`;
     html += `<div class="flex gap-4"><div><span style="font-size:12px;color:#9EA2A1;">심사원</span><div style="font-size:14px;font-weight:600;color:#303A3C;">${auditorDisplay}</div></div>`;
-    html += `<div><span style="font-size:12px;color:#9EA2A1;">심사일</span><div style="font-size:14px;font-weight:600;color:#303A3C;">${dateDisplay}</div></div></div>`;
+    html += `<div><span style="font-size:12px;color:#9EA2A1;">심사일</span><div style="font-size:14px;font-weight:600;color:#303A3C;">${dateDisplay}</div></div>`;
+    // v19.44.0: 확정(잠금) 표시 — 수정 버튼이 왜 없는지 화면에서 알 수 있도록
+    const _lockInfo = getTargetLock(group.year, group.station);
+    if (_lockInfo) html += `<div><span style="font-size:12px;color:#9EA2A1;">상태</span><div style="font-size:13px;font-weight:600;color:#D20015;">확정됨${_lockInfo.lockedByName ? ' · ' + _lockInfo.lockedByName : ''}</div></div>`;
+    html += `</div>`;
     if (_canEdit) html += `<button onclick="event.stopPropagation();startGroupEditCommon(${gIdx})" class="pill-btn pill-btn-outline" style="border-color:#D20015;color:#D20015;font-size:13px;flex-shrink:0;">공통 정보 수정</button>`;
     html += `</div></div>`;
   }
@@ -6515,12 +6679,17 @@ function renderGroupReadOnlyDetail(gIdx, group) {
 
     if (entry.record) {
       const checklist = getChecklist(type);
+      // v19.43.1: 작성 중(부분 저장) 여부 표시 — 이전엔 조회 화면에 미완료 표식이 없어
+      // 왜 완료·점수 집계에 안 잡히는지 화면에서 알 수 없었음
+      const _isPartial = !!entry.record.partial;
       html += `<div class="apple-card" style="padding:14px;display:flex;flex-direction:column;cursor:pointer;transition:all 0.15s ease;"
         onmouseover="this.style.boxShadow='rgba(0,0,0,0.12) 0px 2px 12px 0px'"
         onmouseout="this.style.boxShadow='none'"
         onclick="event.stopPropagation();showTypeDetail(${gIdx},'${type}')">`;
       html += `<div class="flex justify-between items-center mb-2">`;
-      html += `<span style="font-size:13px;font-weight:600;color:#303A3C;word-break:keep-all;">${label}</span>`;
+      html += `<span style="font-size:13px;font-weight:600;color:#303A3C;word-break:keep-all;">${label}`;
+      if (_isPartial) html += ` <span class="badge-pill" style="background:rgba(245,158,11,0.18);color:#B45309;font-size:10px;padding:1px 8px;vertical-align:middle;">작성 중</span>`;
+      html += `</span>`;
       if (company) html += `<span style="font-size:11px;color:#9EA2A1;">${company}</span>`;
       html += `</div>`;
 
@@ -6681,6 +6850,10 @@ function startGroupEditCommon(gIdx) {
   if (!canEditAssessment(group.year, group.station)) { showToast(assignmentDeniedMessage(group.year, group.station), 'error'); return; }
   const anyRecord = Object.values(group.types).find(e => e.record)?.record;
   if (!anyRecord) return;
+  // v19.44.0: 그룹 내 모든 점검표에 대해 충돌 감지 기준값 보관
+  Object.values(group.types).forEach(e => {
+    if (e && e.record) setEditBaseline(e.year, e.station, e.type, e.company, e.record);
+  });
 
   const container = document.getElementById(`viewGroupDetail_${gIdx}`);
   let html = `<div class="apple-card" style="padding:16px;margin-bottom:12px;">`;
@@ -6706,7 +6879,7 @@ function cancelGroupEdit(gIdx) {
   container.innerHTML = renderGroupReadOnlyDetail(gIdx, group);
 }
 
-function saveGroupCommon(gIdx) {
+async function saveGroupCommon(gIdx) {
   const groups = getViewGroups();
   const group = groups[gIdx];
   if (!group) return;
@@ -6720,22 +6893,28 @@ function saveGroupCommon(gIdx) {
   const auditDate = dateStart ? dateStart.slice(0, 7) : '';
 
   let updated = 0;
-  Object.values(group.types).forEach(entry => {
-    if (!entry.record) return;
+  const changedRecords = []; // v19.44.0: 실제로 바뀐 레코드만 기록
+  // v19.44.0: forEach → for...of (레코드별 서버 확인에 await 필요)
+  for (const entry of Object.values(group.types)) {
+    if (!entry || !entry.record) continue;
     const recordIdx = allData.findIndex(d =>
       d.year == entry.year && d.station === entry.station && d.type === entry.type &&
       (!entry.company || d.company === entry.company)
     );
     if (recordIdx >= 0) {
+      if (!(await confirmNoEditConflict(allData[recordIdx]))) { showToast('저장을 취소했습니다.', 'info'); return; }
       allData[recordIdx].auditor = auditor;
       allData[recordIdx].auditDate = auditDate;
       allData[recordIdx].auditDateStart = dateStart;
       allData[recordIdx].auditDateEnd = dateEnd;
+      _stampRecord(allData[recordIdx]);
+      changedRecords.push(allData[recordIdx]);
       updated++;
     }
-  });
+  }
 
-  saveAllData();
+  saveAllData({ records: changedRecords });
+  changedRecords.forEach(clearEditBaseline);
 
   // 심사 일정 데이터에도 동기화
   // v19.33.0: 점수조회 그룹 저장 시 일정 동기화도 admin만. v19.43.0: 품질담당자 이상으로 완화.
@@ -6770,6 +6949,7 @@ function startGroupTypeEdit(gIdx, type) {
 
   editingScores = { ...entry.record.scores };
   editingRemarks = entry.record.remarks ? { ...entry.record.remarks } : {};
+  setEditBaseline(entry.year, entry.station, type, entry.company, entry.record); // v19.44.0: 충돌 감지 기준
   const container = document.getElementById(`viewGroupDetail_${gIdx}`);
   let html = `<div style="margin-bottom:12px;"><span class="badge-pill" style="background:#D20015;color:#fff;font-size:13px;padding:4px 14px;">${getTypeLabel(type)} 점수 수정</span></div>`;
 
@@ -6815,10 +6995,12 @@ function startGroupTypeEdit(gIdx, type) {
   autoGrowAllRemarks(container); // v19.42.0: 편집 모드 비고 textarea 초기 높이 맞춤
 }
 
-function saveGroupTypeEdit(gIdx, type) {
+async function saveGroupTypeEdit(gIdx, type) {
   const groups = getViewGroups();
   const group = groups[gIdx];
   if (!group) return;
+  // v19.43.1: 저장 경로 권한 가드 — v19.33.1이 진입(startGroupTypeEdit)만 막고 저장 함수엔 누락돼 있었음
+  if (!canEditAssessment(group.year, group.station)) { showToast(assignmentDeniedMessage(group.year, group.station), 'error'); return; }
   const entry = group.types[type];
   if (!entry || !entry.record) return;
 
@@ -6827,12 +7009,20 @@ function saveGroupTypeEdit(gIdx, type) {
     (!entry.company || d.company === entry.company)
   );
   if (recordIdx >= 0) {
+    // v19.44.0: 저장 직전 서버 확인 — 그 사이 다른 사람이 저장했으면 덮어쓸지 확인
+    if (!(await confirmNoEditConflict(allData[recordIdx]))) { showToast('저장을 취소했습니다.', 'info'); return; }
     allData[recordIdx].scores = { ...editingScores };
     allData[recordIdx].remarks = { ...(allData[recordIdx].remarks || {}), ...editingRemarks };
-    saveAllData();
+    // v19.43.1: 작성 중(partial) 플래그 재계산 — saveEdit와 동일 기준
+    const judged = applyPartialFlag(allData[recordIdx], getChecklist(type));
+    _stampRecord(allData[recordIdx]); // v19.44.0: 최종 수정자·시각 기록
+    saveAllData({ records: [allData[recordIdx]] }); // v19.44.0: 이 레코드만 기록
+    clearEditBaseline(allData[recordIdx]);
     editingScores = {};
     editingRemarks = {};
-    showToast(`${entry.station} ${getTypeLabel(type)} 점수가 저장되었습니다.`, 'success');
+    showToast(judged && judged.isPartial
+      ? `${entry.station} ${getTypeLabel(type)} 점수가 저장되었습니다. 미입력 ${judged.missing.length}건이 남아 '작성 중' 상태입니다.`
+      : `${entry.station} ${getTypeLabel(type)} 점수가 저장되었습니다.`, 'success');
     viewSearch();
   }
 }
@@ -6854,8 +7044,9 @@ function deleteGroupType(gIdx, type) {
     (!entry.company || d.company === entry.company)
   );
   if (recordIdx >= 0) {
+    const removed = allData[recordIdx]; // v19.44.0: 삭제할 키 확보 후 splice
     allData.splice(recordIdx, 1);
-    saveAllData();
+    saveAllData({ removed: [removed] });
     showToast('데이터가 삭제되었습니다.', 'info');
     viewSearch();
   }
@@ -6985,6 +7176,9 @@ function startEditRecord(idx) {
   // v19.33.1: 점검표 수정은 배정 심사원 + admin만
   if (!canEditAssessment(entry.year, entry.station)) { showToast(assignmentDeniedMessage(entry.year, entry.station), 'error'); return; }
   editingScores = { ...entry.record.scores };
+  // v19.43.1: editingRemarks도 함께 초기화 — 이전엔 직전 편집의 비고가 남아 다른 점검표에 섞여 저장될 수 있었음
+  editingRemarks = entry.record.remarks ? { ...entry.record.remarks } : {};
+  setEditBaseline(entry.year, entry.station, entry.type, entry.company, entry.record); // v19.44.0: 충돌 감지 기준
   const container = document.getElementById(`viewDetail_${idx}`);
   container.innerHTML = renderEditDetail(idx, entry);
   // Render auditor picker after DOM is updated
@@ -6995,11 +7189,12 @@ function cancelEdit(idx) {
   const entry = viewEntries[idx];
   if (!entry) return;
   editingScores = {};
+  editingRemarks = {}; // v19.43.1: 취소 시 비고 편집분도 정리
   const container = document.getElementById(`viewDetail_${idx}`);
   container.innerHTML = renderReadOnlyDetail(idx, entry);
 }
 
-function saveEdit(idx) {
+async function saveEdit(idx) {
   const entry = viewEntries[idx];
   if (!entry || !entry.record) return;
   // v19.33.1: 점검표 저장은 배정 심사원 + admin만
@@ -7017,16 +7212,25 @@ function saveEdit(idx) {
   );
 
   if (recordIdx >= 0) {
+    // v19.44.0: 저장 직전 서버 확인 — 그 사이 다른 사람이 저장했으면 덮어쓸지 확인
+    if (!(await confirmNoEditConflict(allData[recordIdx]))) { showToast('저장을 취소했습니다.', 'info'); return; }
     allData[recordIdx].scores = { ...editingScores };
     allData[recordIdx].remarks = { ...(allData[recordIdx].remarks || {}), ...editingRemarks };
     allData[recordIdx].auditor = auditor;
     allData[recordIdx].auditDate = auditDate;
     allData[recordIdx].auditDateStart = auditDateStart;
     allData[recordIdx].auditDateEnd = auditDateEnd;
-    saveAllData();
+    // v19.43.1: 작성 중(partial) 플래그 재계산 — 이전엔 조회 화면에서 미입력 항목을 채워 저장해도
+    // partial이 남아 완료·점수 집계에 반영되지 않았음(입력 탭에서 재저장해야 해소되던 버그)
+    const judged = applyPartialFlag(allData[recordIdx], getChecklist(entry.type));
+    _stampRecord(allData[recordIdx]); // v19.44.0: 최종 수정자·시각 기록
+    saveAllData({ records: [allData[recordIdx]] }); // v19.44.0: 이 레코드만 기록
+    clearEditBaseline(allData[recordIdx]);
     editingScores = {};
     editingRemarks = {};
-    showToast('수정사항이 저장되었습니다.', 'success');
+    showToast(judged && judged.isPartial
+      ? `수정사항이 저장되었습니다. 미입력 ${judged.missing.length}건이 남아 '작성 중' 상태입니다.`
+      : '수정사항이 저장되었습니다.', 'success');
     renderScoreView();
   }
 }
@@ -7046,8 +7250,9 @@ function deleteRecord(idx) {
   );
 
   if (recordIdx >= 0) {
+    const removed = allData[recordIdx]; // v19.44.0: 삭제할 키 확보 후 splice
     allData.splice(recordIdx, 1);
-    saveAllData();
+    saveAllData({ removed: [removed] });
     showToast('데이터가 삭제되었습니다.', 'info');
     renderScoreView();
   }
@@ -11495,7 +11700,7 @@ function saveScheduleItem(scheduleId) {
       }
       if (item.dateEnd) record.auditDateEnd = item.dateEnd;
     });
-    saveAllData();
+    saveAllData({ records: matched }); // v19.44.0: 일정과 동기화된 레코드만 기록
   }
 
   showToast('일정이 저장되었습니다.', 'success');
@@ -12560,6 +12765,17 @@ function setupFirebaseListeners() {
     } catch(e) {}
   }, (err) => { console.warn('checklistMaster listener cancelled:', err && err.code); });
 
+  // v19.44.0: 심사 결과 확정(잠금) 상태 — 관리자가 다른 기기에서 확정/해제해도 즉시 반영
+  dbRef('lockedTargets').on('value', (snapshot) => {
+    const fb = snapshot.val();
+    lockedTargets = (fb && typeof fb === 'object') ? fb : {};
+    try { SafeStorage.set(LOCKS_STORAGE_KEY, lockedTargets); } catch(e) {}
+    try {
+      const aw = document.getElementById('appWrapper');
+      if (aw && aw.style.display !== 'none') refreshCurrentView();
+    } catch(e) {}
+  }, (err) => { console.warn('lockedTargets listener cancelled:', err && err.code); });
+
   // v19.11.0: Memo 실시간 동기화 — { year: { stationKey: { memoId: memo } } }
   // v19.11.13: RTDB가 source of truth + _unsynced 메모만 보호 (firstFire union 제거 — 삭제 전파 막던 버그 수정)
   dbRef('memos').on('value', (snapshot) => {
@@ -12668,6 +12884,60 @@ function decodeScoresFromFirebase(scores) {
     decoded[origKey] = v;
   }
   return decoded;
+}
+
+// ── v19.44.0: 레코드 단위 Firebase 저장 ──────────────────────────────────────
+// 기존 firebaseSaveAllData()는 allData 전체를 dbRef('assessments').set()으로 통째 교체했음.
+// → 내가 저장하는 순간 내 브라우저 스냅샷이 서버 전체를 대체하므로, 그 사이 다른 사람이
+//   저장한 '다른 지점' 레코드까지 함께 사라졌음(특히 작성 중에는 listener가 원격을 무시해
+//   stale 창이 수십 분까지 벌어짐). 아래 함수들은 해당 레코드 키만 update()로 기록한다.
+function _assessmentKey(d) {
+  return makeKey(d.year, d.station, d.type, d.company).replace(/[.#$/\[\]]/g, '_');
+}
+function _encodeRecordForFirebase(d) {
+  const copy = { ...d, scores: encodeScoresForFirebase(d.scores || {}) };
+  if (d.remarks) copy.remarks = encodeScoresForFirebase(d.remarks);
+  // Firebase는 undefined를 거부 → 제거
+  Object.keys(copy).forEach(k => { if (copy[k] === undefined) delete copy[k]; });
+  return copy;
+}
+// 지정한 레코드들만 저장(다른 키는 서버 값 그대로 유지)
+function firebaseSaveRecords(records) {
+  if (!firebaseDb) return Promise.resolve();
+  const list = (records || []).filter(Boolean);
+  if (!list.length) return Promise.resolve();
+  if (!_fbFirstSync.assessments) {
+    console.warn('firebaseSaveRecords blocked: assessments first sync not done');
+    return Promise.resolve();
+  }
+  try {
+    const updates = {};
+    list.forEach(d => { updates[_assessmentKey(d)] = _encodeRecordForFirebase(d); });
+    return dbRef('assessments').update(updates);
+  } catch(e) {
+    console.error('Firebase save records failed:', e);
+    showToast('심사 데이터 Firebase 저장 실패', 'error');
+    return Promise.reject(e);
+  }
+}
+// 지정한 레코드들만 삭제
+function firebaseRemoveRecords(records) {
+  if (!firebaseDb) return Promise.resolve();
+  const list = (records || []).filter(Boolean);
+  if (!list.length) return Promise.resolve();
+  if (!_fbFirstSync.assessments) {
+    console.warn('firebaseRemoveRecords blocked: assessments first sync not done');
+    return Promise.resolve();
+  }
+  try {
+    const updates = {};
+    list.forEach(d => { updates[_assessmentKey(d)] = null; });
+    return dbRef('assessments').update(updates);
+  } catch(e) {
+    console.error('Firebase remove records failed:', e);
+    showToast('심사 데이터 Firebase 삭제 실패', 'error');
+    return Promise.reject(e);
+  }
 }
 
 function firebaseSaveAllData() {
@@ -13948,6 +14218,43 @@ function _carSortItems(items) {
 }
 
 // --- Navigation ---
+// v19.44.0: 상세 페이지 확정(잠금) 상태 표시 — 배지는 전원, 확정/해제 버튼은 관리자만
+function updateDetailLockUI(year, station) {
+  const locked = isTargetLocked(year, station);
+  const badge = document.getElementById('sdLockBadge');
+  if (badge) {
+    const lock = getTargetLock(year, station);
+    badge.style.display = locked ? 'inline-flex' : 'none';
+    badge.textContent = locked
+      ? '확정됨' + (lock && lock.lockedByName ? ' · ' + lock.lockedByName : '')
+      : '';
+  }
+  const btn = document.getElementById('sdLockBtn');
+  if (!btn) return;
+  if (!hasRole('admin')) { btn.style.display = 'none'; return; }
+  btn.style.display = 'inline-flex';
+  btn.textContent = locked ? '확정 해제' : '결과 확정';
+  btn.title = locked
+    ? '확정을 해제하면 배정 심사원·품질담당자가 다시 수정할 수 있습니다'
+    : '확정하면 이 대상의 점검표를 관리자 외에는 수정·삭제할 수 없습니다';
+  btn.style.borderColor = locked ? '#D20015' : '';
+  btn.style.color = locked ? '#D20015' : '';
+}
+
+async function toggleTargetLock() {
+  if (!requireRole('admin')) return;
+  const year = stationDetailYear, station = stationDetailStation;
+  if (!year || !station) return;
+  const locked = isTargetLocked(year, station);
+  const msg = locked
+    ? `${station} ${year}년 심사 결과의 확정을 해제하시겠습니까?\n\n해제하면 배정 심사원·품질담당자가 다시 수정할 수 있습니다.`
+    : `${station} ${year}년 심사 결과를 확정하시겠습니까?\n\n확정하면 이 대상의 모든 점검표를 관리자 외에는 수정·삭제할 수 없습니다.`;
+  if (!confirm(msg)) return;
+  if (!(await setTargetLock(year, station, !locked))) return;
+  showToast(locked ? '확정을 해제했습니다.' : '심사 결과를 확정했습니다.', 'success');
+  openStationDetail(year, station, true); // 편집 버튼 노출 등 화면 전체 재판정
+}
+
 function openStationDetail(year, station, _fromPopstate) {
   // v19.31.0: 운송본부 사용자는 실/본부 상세 진입 차단 (딥링크/클릭 전 경로 방어)
   if (DIVISIONS[station] && !canSeeDivision()) { showToast('접근 권한이 없습니다.', 'error'); return; }
@@ -13970,6 +14277,7 @@ function openStationDetail(year, station, _fromPopstate) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   renderStationDetail(year, station);
   try { injectReportDraftPanel(year, station); } catch(e) { console.warn('injectReportDraftPanel failed:', e); }
+  try { updateDetailLockUI(year, station); } catch(e) { console.warn('updateDetailLockUI failed:', e); } // v19.44.0
   // v19.31.2: CAR 편집 연필 버튼은 배정 심사원 + admin만 노출 (클릭 가드는 toggleCarEdit에 별도 존재)
   try {
     const _carEditable = canEditAssessment(year, station);
@@ -18462,6 +18770,8 @@ function renderSDCategoryTable(d) {
 Object.assign(window, {
   // App
   switchTab, goToHome, init,
+  // v19.44.0: 심사 결과 확정(잠금) — 상세 헤더 inline onclick에서 호출
+  toggleTargetLock,
   // Input tab
   switchAuditCategory, inputSearch, inputGoBack, inputGoHome,
   selectChecklistType, inputShowTypes, saveAssessment,
