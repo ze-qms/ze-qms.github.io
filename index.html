@@ -1599,7 +1599,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.45.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.45.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1776,7 +1776,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.45.0',
+  version: '19.45.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -16093,7 +16093,7 @@ function saveMemo(memoInput) {
   if (memo.visibility !== 'public' && memo.visibility !== 'team' && memo.visibility !== 'private') memo.visibility = 'private';
   // v19.45.0: 팀 공유는 팀 범위 안에 있는 사람만 만들 수 있음 (배정 심사원 + 관리자·품질담당자)
   if (memo.visibility === 'team' && !isMemoTeamMember(memo.year, memo.station)) {
-    showToast('팀 공유는 해당 심사에 배정된 심사원만 사용할 수 있습니다.', 'error');
+    showToast('심사원 공유는 해당 심사에 배정된 심사원만 사용할 수 있습니다.', 'error');
     return null;
   }
 
@@ -16443,7 +16443,7 @@ function _renderMemoCard(memo, opts) {
   const visBadge = memo.visibility === 'public'
     ? '<span class="badge-pill" style="background:rgba(0,103,196,0.15);color:#0067C4;font-size:12px;font-weight:600;padding:3px 10px;">공유</span>'
     : memo.visibility === 'team'
-    ? '<span class="badge-pill" style="background:rgba(180,83,9,0.14);color:#B45309;font-size:12px;font-weight:600;padding:3px 10px;">👥 팀 공유</span>'
+    ? '<span class="badge-pill" style="background:rgba(180,83,9,0.14);color:#B45309;font-size:12px;font-weight:600;padding:3px 10px;">👥 심사원 공유</span>'
     : '<span class="badge-pill" style="background:rgba(158,162,161,0.15);color:#6E7273;font-size:12px;font-weight:600;padding:3px 10px;">나만 보기</span>';
   const typeBadge = memo.type === 'checklist'
     ? '<span class="badge-pill" style="background:rgba(210,0,21,0.12);color:#D20015;font-size:12px;font-weight:600;padding:3px 10px;">☑ 체크리스트</span>'
@@ -16604,10 +16604,10 @@ function _draftFormHTML(idPrefix) {
         <button onclick="onMemoDraftType('note')" style="${wsSegBase}${s.draftType==='note'?wsSegActive:wsSegInactive}">📝 메모</button>
         <button onclick="onMemoDraftType('checklist')" style="${wsSegBase}${s.draftType==='checklist'?wsSegActive:wsSegInactive}">☑ 체크리스트</button>
       </div>
-      <!-- 공개범위 세그먼티드 — v19.45.0: 전체 공유 / 팀 공유 / 나만 보기 3단 -->
+      <!-- 공개범위 세그먼티드 — v19.45.0: 전체 공유 / 심사원 공유 / 나만 보기 3단 -->
       <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:11px;padding:3px;">
         <button onclick="${visLocked?'':`onMemoDraftVisibility('public')`}" ${visLocked?'disabled':''} title="${visLocked?'체크리스트는 전체 공유할 수 없습니다':'모든 사용자에게 공개'}" style="${wsSegBase}${effVis==='public'?wsSegActive:wsSegInactive}${visLocked?wsSegDisabled:''}">전체 공유</button>
-        <button onclick="${teamOK?`onMemoDraftVisibility('team')`:''}" ${teamOK?'':'disabled'} title="${teamHint}" style="${wsSegBase}${effVis==='team'?wsSegActive:wsSegInactive}${teamOK?'':wsSegDisabled}">👥 팀 공유</button>
+        <button onclick="${teamOK?`onMemoDraftVisibility('team')`:''}" ${teamOK?'':'disabled'} title="${teamHint}" style="${wsSegBase}${effVis==='team'?wsSegActive:wsSegInactive}${teamOK?'':wsSegDisabled}">👥 심사원 공유</button>
         <button onclick="onMemoDraftVisibility('private')" style="${wsSegBase}${effVis==='private'?wsSegActive:wsSegInactive}">나만 보기</button>
       </div>
     </div>
@@ -16648,7 +16648,7 @@ function _draftFormHTML(idPrefix) {
          </div>`
       : `<div class="mb-4">
           <label class="apple-label" style="font-size:13px;">내용</label>
-          <textarea class="apple-input" rows="6" placeholder="자유롭게 메모하세요 (전체 공유: 공지/인수인계 · 팀 공유: 심사팀 내부 · 나만 보기: 개인 메모)" oninput="memoWorkspaceState.draftContent=this.value;" style="resize:vertical;font-size:15px;line-height:1.6;padding:14px;">${_esc(s.draftContent)}</textarea>
+          <textarea class="apple-input" rows="6" placeholder="자유롭게 메모하세요 (전체 공유: 공지/인수인계 · 심사원 공유: 배정 심사원끼리 · 나만 보기: 개인 메모)" oninput="memoWorkspaceState.draftContent=this.value;" style="resize:vertical;font-size:15px;line-height:1.6;padding:14px;">${_esc(s.draftContent)}</textarea>
          </div>`}
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button onclick="onMemoDraftReset()" class="pill-btn pill-btn-outline" style="font-size:14px;padding:10px 22px;">${isEditing ? '취소' : '초기화'}</button>
@@ -16722,7 +16722,7 @@ function _renderMemoWorkspaceInner(el) {
         <div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;">
           ${['all','note','checklist'].map(t => `<button onclick="memoWorkspaceState.filterType='${t}';renderMemoWorkspace();" class="pill-btn ${s.filterType===t?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${t==='all'?'전체':t==='note'?'📝 메모':'☑ 체크리스트'}</button>`).join('')}
           <span style="border-left:1px solid rgba(192,206,209,0.5);margin:0 2px;"></span>
-          ${['all','public','team','private'].map(v => `<button onclick="memoWorkspaceState.filterVisibility='${v}';renderMemoWorkspace();" class="pill-btn ${s.filterVisibility===v?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${v==='all'?'전체':v==='public'?'공유':v==='team'?'👥 팀 공유':'나만 보기'}</button>`).join('')}
+          ${['all','public','team','private'].map(v => `<button onclick="memoWorkspaceState.filterVisibility='${v}';renderMemoWorkspace();" class="pill-btn ${s.filterVisibility===v?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${v==='all'?'전체':v==='public'?'공유':v==='team'?'👥 심사원 공유':'나만 보기'}</button>`).join('')}
         </div>
         <div style="font-size:14px;color:#9EA2A1;margin-bottom:12px;font-weight:600;">총 ${list.length}건</div>
         <div style="display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow-y:auto;padding-right:6px;">
@@ -16751,7 +16751,7 @@ function onMemoDraftVisibility(v) {
   const s = memoWorkspaceState;
   if (s.draftType === 'checklist' && v === 'public') return; // 체크리스트는 전체 공유 불가
   if (v === 'team' && s.draftStation && !isMemoTeamMember(parseInt(s.draftYear), s.draftStation)) {
-    showToast('이 대상에 배정된 심사원만 팀 공유를 사용할 수 있습니다.', 'error');
+    showToast('이 대상에 배정된 심사원만 심사원 공유를 사용할 수 있습니다.', 'error');
     return;
   }
   s.draftVisibility = v;
@@ -17236,10 +17236,10 @@ function _renderMemoPanelInner() {
           <button onclick="onMemoQuickType('note')" style="${segBtnBase}${qd.type==='note'?segActive:segInactive}">📝 메모</button>
           <button onclick="onMemoQuickType('checklist')" style="${segBtnBase}${qd.type==='checklist'?segActive:segInactive}">☑ 체크리스트</button>
         </div>
-        <!-- 공개범위 세그먼티드 — v19.45.0: 전체 공유 / 팀 공유 / 나만 보기 -->
+        <!-- 공개범위 세그먼티드 — v19.45.0: 전체 공유 / 심사원 공유 / 나만 보기 -->
         <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:10px;padding:3px;">
           <button onclick="${isCl?'':`onMemoQuickVisibility('public')`}" ${isCl?'disabled':''} title="${isCl?'체크리스트는 전체 공유할 수 없습니다':'모든 사용자에게 공개'}" style="${segBtnBase}${effVis==='public'?segActive:segInactive}${isCl?segDisabled:''}">전체 공유</button>
-          <button onclick="${teamOK?`onMemoQuickVisibility('team')`:''}" ${teamOK?'':'disabled'} title="${teamOK?'이 심사에 배정된 심사원끼리만 공유':'이 심사에 배정된 심사원만 사용할 수 있습니다'}" style="${segBtnBase}${effVis==='team'?segActive:segInactive}${teamOK?'':segDisabled}">👥 팀 공유</button>
+          <button onclick="${teamOK?`onMemoQuickVisibility('team')`:''}" ${teamOK?'':'disabled'} title="${teamOK?'이 심사에 배정된 심사원끼리만 공유':'이 심사에 배정된 심사원만 사용할 수 있습니다'}" style="${segBtnBase}${effVis==='team'?segActive:segInactive}${teamOK?'':segDisabled}">👥 심사원 공유</button>
           <button onclick="onMemoQuickVisibility('private')" style="${segBtnBase}${effVis==='private'?segActive:segInactive}">나만 보기</button>
         </div>
       </div>
@@ -17284,7 +17284,7 @@ function _renderMemoPanelInner() {
     ${quickForm}
     ${orphanForm}
     ${section('공유 메모', '#0067C4', publicNotes, '📢')}
-    ${section('팀 공유 (배정 심사원)', '#B45309', teamMemos, '👥')}
+    ${section('심사원 공유', '#B45309', teamMemos, '👥')}
     ${section('내 체크리스트', '#D20015', myChecklists, '☑')}
     ${section('내 메모', '#6E7273', myNotes, '📝')}
   </div>`;
@@ -17456,7 +17456,7 @@ function onMemoQuickVisibility(v) {
   if (v === 'team') {
     const { year, station } = _phase4Scope();
     if (!isMemoTeamMember(year, station)) {
-      showToast('이 심사에 배정된 심사원만 팀 공유를 사용할 수 있습니다.', 'error');
+      showToast('이 심사에 배정된 심사원만 심사원 공유를 사용할 수 있습니다.', 'error');
       return;
     }
   }
@@ -17512,7 +17512,7 @@ function renderStationMemoCard() {
 
   let html = '';
   html += `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">`;
-  const filters = [['all','전체'],['public','공유'],['team','👥 팀 공유'],['mine_checklist','내 체크리스트'],['mine_note','내 메모']];
+  const filters = [['all','전체'],['public','공유'],['team','👥 심사원 공유'],['mine_checklist','내 체크리스트'],['mine_note','내 메모']];
   filters.forEach(([k, label]) => {
     html += `<button onclick="setSDMemoFilter('${k}')" class="pill-btn ${_sdMemoFilter===k?'pill-btn-primary':'pill-btn-outline'}" style="font-size:12px;padding:5px 12px;">${label}</button>`;
   });
