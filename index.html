@@ -1599,7 +1599,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.44.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.45.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1776,7 +1776,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.44.1',
+  version: '19.45.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -4261,6 +4261,23 @@ function assignmentDeniedMessage(year, station) {
     ? `작성·수정 권한이 없습니다. 이 심사 배정: ${names.join(', ')} (관리자 문의)`
     : '배정된 심사 일정이 없어 작성 권한이 없습니다. 관리자가 일정·심사원을 배정해야 합니다.';
 }
+// v19.45.0: 메모 '팀 공유'(visibility='team') 범위 판정 — 해당 (연도·대상) 일정에 배정된 심사원 + 관리자·품질담당자.
+// canEditAssessment를 재사용하지 않는 이유: 그 함수는 확정(잠금)된 심사를 차단하는데,
+// 결과가 확정된 뒤에도 메모·체크리스트는 계속 열람·기록해야 하므로 잠금과 분리한다.
+function isMemoTeamMember(year, station) {
+  if (!currentUser) return false;
+  if (hasRole('admin')) return true;
+  if (currentUser.role === 'qmanager') {
+    // 운송본부 scope는 실/본부 대상 제외 (다른 권한 판정과 동일 정책)
+    if (isDivisionStation(station) && !canSeeDivision()) return false;
+    return true;
+  }
+  if (!hasRole('auditor')) return false;
+  const profile = (typeof getMyAuditorProfile === 'function') ? getMyAuditorProfile() : null;
+  if (!profile || !profile.name) return false;
+  return getAssignedAuditorNames(year, station).includes(profile.name);
+}
+
 // v19.31.0: scope에 따라 division 전용 UI 요소(입력 카테고리 버튼/통계·분석 서브탭/조회 옵션) 숨김.
 function applyScopePermissions() {
   const showDiv = canSeeDivision();
@@ -16001,16 +16018,47 @@ function loadReportMetaFromFirebase() {
 // =============================================================================
 // 데이터 모델:
 //   { id, year, scopeType:'branch'|'division'|'outsourcing', station, type:'note'|'checklist',
-//     visibility:'public'|'private', authorEmpNo, authorName, createdAt, updatedAt,
-//     content?(note), title?(checklist), items?[{id,text,checked,checkedAt}] }
-//   - 무효 조합: type=checklist + visibility=public — 클라이언트 검증으로 차단
+//     visibility:'public'|'team'|'private', authorEmpNo, authorName, createdAt, updatedAt,
+//     content?(note), title?(checklist), items?[{id,text,checked,checkedAt,checkedByName}] }
+//   - 무효 조합: type=checklist + visibility=public — 클라이언트 검증으로 차단(team은 허용)
 //   - 권한: 본인만 수정/삭제, public 메모는 admin도 삭제 가능
+//   - v19.45.0 team(팀 공유): 같은 심사에 배정된 심사원 + 관리자·품질담당자가 열람·수정·삭제·체크 모두 가능.
+//     체크 상태는 팀 공동(한 명이 체크하면 전원에게 반영), 체크한 사람은 checkedByName에 기록.
 function _memoStationKey(station) { return String(station || '').replace(/[\/\.#$\[\]]/g, '_'); }
 function makeMemoId() { return 'memo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
 function makeCheckItemId() { return 'ci_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
 // v19.16.2: 체크리스트 항목에 붙일 수 있는 커스텀 이모지 팔레트
 const MEMO_EMOJIS = ['❗','⭐','✈️','⚠️','✅','🔥','📌','🎯'];
 const MEMO_ITEM_KINDS = { ITEM: 'item', H1: 'heading1', H2: 'heading2' };
+
+// v19.45.0: 메모 단위 권한 헬퍼 — 열람/수정/삭제/체크가 모두 같은 기준을 쓰도록 단일화.
+// (권한 판정이 함수마다 흩어져 한 곳만 고쳐지던 과거 패턴을 피하기 위해 헬퍼로 모음)
+function isMemoMine(memo) {
+  if (!memo || !currentUser) return false;
+  // legacy author 누락 메모(v19.11.10)는 본인이 클레임할 수 있도록 내 것으로 취급
+  if (!memo.authorEmpNo) return true;
+  return memo.authorEmpNo === currentUser.empNo;
+}
+function isMemoTeamShared(memo) {
+  return !!(memo && memo.visibility === 'team');
+}
+// 팀 공유 메모에 접근 가능한가 — 배정 심사원 + 관리자·품질담당자
+function canAccessTeamMemo(memo) {
+  if (!isMemoTeamShared(memo)) return false;
+  return isMemoTeamMember(memo.year, memo.station);
+}
+// 내용 수정(항목 추가/삭제 포함) 권한
+function canEditMemo(memo) {
+  if (!memo || !currentUser) return false;
+  if (isMemoMine(memo)) return true;
+  if (canAccessTeamMemo(memo)) return true;                                  // 팀원 누구나 수정
+  if (currentUser.role === 'admin' && memo.visibility === 'public') return true; // 기존 admin 중재
+  return false;
+}
+// 삭제 권한 — 팀 공유는 팀원 누구나(사용자 확정 정책)
+function canDeleteMemo(memo) { return canEditMemo(memo); }
+// 체크박스 토글 권한
+function canCheckMemoItem(memo) { return canEditMemo(memo); }
 
 function loadMemos(year, station) {
   // 단일 (year, station) 메모 맵 — { memoId: memo }
@@ -16040,9 +16088,14 @@ function saveMemo(memoInput) {
   const memo = Object.assign({}, memoInput);
   if (!memo.year || !memo.station || !memo.type) { showToast('메모 저장 실패: 필수 정보 누락', 'error'); return null; }
   if (memo.type !== 'note' && memo.type !== 'checklist') { showToast('메모 타입 오류', 'error'); return null; }
-  // 무효 조합 차단
-  if (memo.type === 'checklist' && memo.visibility !== 'private') memo.visibility = 'private';
-  if (memo.visibility !== 'public' && memo.visibility !== 'private') memo.visibility = 'private';
+  // 무효 조합 차단 — v19.45.0: 체크리스트는 team 허용, public만 차단(team으로 강등)
+  if (memo.type === 'checklist' && memo.visibility === 'public') memo.visibility = 'team';
+  if (memo.visibility !== 'public' && memo.visibility !== 'team' && memo.visibility !== 'private') memo.visibility = 'private';
+  // v19.45.0: 팀 공유는 팀 범위 안에 있는 사람만 만들 수 있음 (배정 심사원 + 관리자·품질담당자)
+  if (memo.visibility === 'team' && !isMemoTeamMember(memo.year, memo.station)) {
+    showToast('팀 공유는 해당 심사에 배정된 심사원만 사용할 수 있습니다.', 'error');
+    return null;
+  }
 
   const now = new Date().toISOString();
   const isNew = !memo.id;
@@ -16059,10 +16112,9 @@ function saveMemo(memoInput) {
       memo.authorEmpNo = memo.authorEmpNo || existing.authorEmpNo;
       memo.authorName = memo.authorName || existing.authorName;
       memo.createdAt = memo.createdAt || existing.createdAt || now;
-      // 권한 체크: 본인 메모만 수정 가능 (admin은 public 메모 수정 가능)
-      const isMine = existing.authorEmpNo === currentUser.empNo;
-      const canModerate = currentUser.role === 'admin' && existing.visibility === 'public';
-      if (!isMine && !canModerate) {
+      // 권한 체크 — v19.45.0: 본인 / 팀 공유 메모의 팀원 / admin의 public 중재
+      // 판정은 '저장 전 서버(로컬 캐시) 상태' 기준. 남이 만든 나만 보기 메모를 team으로 바꿔 가로채는 것을 막는다.
+      if (!canEditMemo(existing)) {
         showToast('수정 권한이 없습니다.', 'error');
         return null;
       }
@@ -16097,6 +16149,8 @@ function saveMemo(memoInput) {
       if (kind === 'item') {
         out.checked = !!it.checked;
         out.checkedAt = it.checked ? (it.checkedAt || now) : null;
+        // v19.45.0: 팀 공유 체크리스트 — 누가 체크했는지 보존 (없으면 필드 자체를 만들지 않음)
+        if (it.checked && it.checkedByName) out.checkedByName = it.checkedByName;
       }
       return out;
     });
@@ -16182,11 +16236,9 @@ function deleteMemo(year, station, memoId) {
   const key = year + '_' + station;
   const memo = all[key] && all[key][memoId];
   if (!memo) { showToast('메모를 찾을 수 없습니다.', 'error'); return false; }
-  // v19.11.10: legacy author 누락 메모 — 본인이 정리 가능
-  const isOrphan = !memo.authorEmpNo;
-  const isMine = currentUser && (memo.authorEmpNo === currentUser.empNo || isOrphan);
-  const canModerate = currentUser && currentUser.role === 'admin' && memo.visibility === 'public';
-  if (!isMine && !canModerate) { showToast('삭제 권한이 없습니다.', 'error'); return false; }
+  // v19.45.0: 본인 / 팀 공유의 팀원 / admin의 public 중재 — canDeleteMemo로 단일화
+  // (legacy author 누락 메모는 isMemoMine이 true를 반환해 기존 복구 경로 유지)
+  if (!canDeleteMemo(memo)) { showToast('삭제 권한이 없습니다.', 'error'); return false; }
 
   // v19.11.12: RTDB delete 성공 전엔 _pendingDelete 마킹으로 보존. 성공 시 완전 제거.
   if (firebaseDb) {
@@ -16223,17 +16275,19 @@ function toggleChecklistItem(year, station, memoId, itemId) {
   const memo = all[key] && all[key][memoId];
   if (!memo || memo.type !== 'checklist') return false;
   if (!currentUser) { showToast('로그인이 필요합니다.', 'error'); return false; }
+  // v19.45.0: 본인 / 팀 공유의 팀원만 토글 가능
+  if (!canCheckMemoItem(memo)) { showToast('체크 권한이 없습니다.', 'error'); return false; }
   // v19.11.9: author 없는 legacy 메모는 첫 토글 시 본인이 클레임 (이전 버전 버그 복구용)
   if (!memo.authorEmpNo) {
     memo.authorEmpNo = currentUser.empNo;
     memo.authorName = currentUser.name || currentUser.empNo;
-  } else if (memo.authorEmpNo !== currentUser.empNo) {
-    showToast('체크 권한이 없습니다.', 'error'); return false;
   }
   const idx = memo.items.findIndex(it => it.id === itemId);
   if (idx < 0) return false;
   memo.items[idx].checked = !memo.items[idx].checked;
   memo.items[idx].checkedAt = memo.items[idx].checked ? new Date().toISOString() : null;
+  // v19.45.0: 팀 공동 체크 — 누가 체크했는지 기록(해제 시 제거). 저장은 항상 하되 표시는 팀 공유일 때만.
+  memo.items[idx].checkedByName = memo.items[idx].checked ? (currentUser.name || currentUser.empNo || '') : null;
   memo.updatedAt = new Date().toISOString();
 
   // v19.11.12: 토글 시 RTDB write 실패 가능성 — _unsynced 마킹으로 retry 큐 합류
@@ -16248,6 +16302,7 @@ function toggleChecklistItem(year, station, memoId, itemId) {
       const updates = {};
       updates['items/' + idx + '/checked'] = memo.items[idx].checked;
       updates['items/' + idx + '/checkedAt'] = memo.items[idx].checkedAt;
+      updates['items/' + idx + '/checkedByName'] = memo.items[idx].checkedByName; // v19.45.0
       updates['updatedAt'] = memo.updatedAt;
       if (memo.authorEmpNo) {
         updates['authorEmpNo'] = memo.authorEmpNo;
@@ -16272,6 +16327,8 @@ function _memoVisibleToMe(memo) {
   // v19.11.10: legacy author 누락 메모는 모든 로그인 사용자에게 보이게 (복구 가능하도록)
   if (!memo.authorEmpNo) return !!currentUser;
   if (memo.visibility === 'public') return true;
+  // v19.45.0 team(팀 공유) — 작성자 본인 + 배정 심사원 + 관리자·품질담당자
+  if (memo.visibility === 'team') return isMemoMine(memo) || canAccessTeamMemo(memo);
   // private — 본인만
   return !!(currentUser && memo.authorEmpNo === currentUser.empNo);
 }
@@ -16293,13 +16350,17 @@ function listAllMemosVisibleToMe(year) {
 }
 
 function getMyChecklistProgress(year, station) {
-  // Phase 4 상단 배지용 — 본인의 private 체크리스트 항목 N/M
+  // Phase 4 상단 배지 / 모바일 FAB 배지용 — 내가 다루는 체크리스트 항목 N/M
+  // v19.45.0: 본인 체크리스트 + 팀 공유 체크리스트(공동 진행률). 헤더(heading1/2)는 항목이 아니므로 제외 — 카드의 진행률과 동일 기준.
   if (!currentUser) return { total: 0, checked: 0 };
   const memos = listMemosVisibleToMe(year, station).filter(m =>
-    m.type === 'checklist' && m.authorEmpNo === currentUser.empNo
+    m.type === 'checklist' && (isMemoMine(m) || canAccessTeamMemo(m))
   );
   let total = 0, checked = 0;
-  memos.forEach(m => (m.items || []).forEach(it => { total++; if (it.checked) checked++; }));
+  memos.forEach(m => (m.items || []).forEach(it => {
+    if ((it.kind || 'item') !== 'item') return;
+    total++; if (it.checked) checked++;
+  }));
   return { total, checked, memos };
 }
 
@@ -16373,13 +16434,16 @@ function _memoStationOptionsHTML(scopeType, currentVal) {
 
 function _renderMemoCard(memo, opts) {
   opts = opts || {};
-  // v19.11.10: legacy author 누락 메모 — 본인이 클레임 가능하도록 isMine=true 처리
-  const isOrphan = !memo.authorEmpNo;
-  const isMine = currentUser && (memo.authorEmpNo === currentUser.empNo || isOrphan);
-  const canDelete = isMine || (currentUser && currentUser.role === 'admin' && memo.visibility === 'public');
+  // v19.45.0: 권한 판정을 헬퍼로 단일화 (본인 / 팀 공유의 팀원 / admin의 public 중재)
+  // isMine은 legacy author 누락 메모(v19.11.10 클레임 경로)를 포함한다.
+  const isMine = isMemoMine(memo);
+  const canEdit = canEditMemo(memo);
+  const canDelete = canDeleteMemo(memo);
   // v19.11.3: Notion 스타일 — 폰트 키움, 메타 13px, 본문 16px, 패딩 18px
   const visBadge = memo.visibility === 'public'
     ? '<span class="badge-pill" style="background:rgba(0,103,196,0.15);color:#0067C4;font-size:12px;font-weight:600;padding:3px 10px;">공유</span>'
+    : memo.visibility === 'team'
+    ? '<span class="badge-pill" style="background:rgba(180,83,9,0.14);color:#B45309;font-size:12px;font-weight:600;padding:3px 10px;">👥 팀 공유</span>'
     : '<span class="badge-pill" style="background:rgba(158,162,161,0.15);color:#6E7273;font-size:12px;font-weight:600;padding:3px 10px;">나만 보기</span>';
   const typeBadge = memo.type === 'checklist'
     ? '<span class="badge-pill" style="background:rgba(210,0,21,0.12);color:#D20015;font-size:12px;font-weight:600;padding:3px 10px;">☑ 체크리스트</span>'
@@ -16399,8 +16463,8 @@ function _renderMemoCard(memo, opts) {
     const checked = itemRows.filter(it => it.checked).length;
     const total = itemRows.length;
     const pct = total ? Math.round(checked / total * 100) : 0;
-    // v19.16.2: 진행률 헤더에 일괄 메뉴(⋯) 부착 (본인 메모만)
-    const bulkBtn = isMine
+    // v19.16.2: 진행률 헤더에 일괄 메뉴(⋯) 부착 — v19.45.0: 팀 공유는 팀원도 사용
+    const bulkBtn = canEdit
       ? `<button onclick="onMemoBulkMenu(event, ${memo.year},'${_esc(memo.station)}','${memo.id}')" title="일괄 작업" style="background:none;border:none;color:#9EA2A1;font-size:18px;font-weight:700;cursor:pointer;padding:2px 8px;border-radius:6px;line-height:1;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.06)'" onmouseout="this.style.background='none'">⋯</button>`
       : '';
     body = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><span style="font-size:13px;font-weight:700;color:#565A5B;letter-spacing:-0.2px;">사전 확인 <span style="color:${pct===100?'#16a34a':'#D20015'};">${checked}/${total}</span> · ${pct}%</span>${bulkBtn}</div>`;
@@ -16416,10 +16480,15 @@ function _renderMemoCard(memo, opts) {
         // 소제목 — 회색·중간 굵기
         body += `<div style="font-size:15px;font-weight:600;color:#6E7273;margin:4px 0 0;letter-spacing:-0.2px;word-break:break-word;">${emojiPrefix}${_esc(it.text)}</div>`;
       } else {
-        const canCheck = isMine;
+        const canCheck = canEdit;
+        // v19.45.0: 팀 공유 체크리스트는 누가 체크했는지 표시 (본인 메모엔 불필요해 생략)
+        // 체크된 항목은 취소선이 걸리므로 이름에는 text-decoration:none으로 해제
+        const byTag = (memo.visibility === 'team' && it.checked && it.checkedByName)
+          ? `<span style="font-size:12px;color:#9EA2A1;font-weight:500;margin-left:8px;white-space:nowrap;text-decoration:none;display:inline-block;">✓ ${_esc(it.checkedByName)}</span>`
+          : '';
         body += `<label style="display:flex;align-items:flex-start;gap:12px;cursor:${canCheck?'pointer':'default'};font-size:15px;line-height:1.5;${it.checked?'color:#9EA2A1;text-decoration:line-through;':'color:#1a1c1d;'}">`;
         body += `<input type="checkbox" ${it.checked?'checked':''} ${canCheck?'':'disabled'} ${canCheck?`onchange="onMemoChecklistToggle(${memo.year},'${_esc(memo.station)}','${memo.id}','${it.id}')"`:''} style="margin-top:3px;flex-shrink:0;width:18px;height:18px;cursor:${canCheck?'pointer':'default'};accent-color:#D20015;">`;
-        body += `<span style="word-break:break-word;letter-spacing:-0.2px;">${emojiPrefix}${_esc(it.text)}</span></label>`;
+        body += `<span style="word-break:break-word;letter-spacing:-0.2px;">${emojiPrefix}${_esc(it.text)}${byTag}</span></label>`;
       }
     });
     body += '</div>';
@@ -16430,7 +16499,7 @@ function _renderMemoCard(memo, opts) {
   if (memo.type === 'checklist') {
     actions += `<button onclick="copyMemoToClipboard(${memo.year},'${_esc(memo.station)}','${memo.id}')" title="그룹웨어용 텍스트로 복사" style="background:none;border:none;font-size:13px;color:#6E7273;cursor:pointer;padding:6px 12px;font-weight:500;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='none'">📋 복사</button>`;
   }
-  if (isMine) {
+  if (canEdit) {
     // v19.28.0: 점검표 화면(사이드 패널/인라인/바텀시트)에서는 메모 탭으로 이동하지 않고 그 자리에서 수정
     const editCall = opts.editInline
       ? `onMemoQuickEdit('${memo.id}',${memo.year},'${_esc(memo.station)}')`
@@ -16446,7 +16515,11 @@ function _renderMemoCard(memo, opts) {
     ? `<div style="font-size:12px;color:#9EA2A1;margin-bottom:8px;font-weight:500;">${memo.year} · ${_esc(memo.station)}</div>`
     : '';
 
-  return `<div class="apple-card" style="padding:18px 20px;border-left:4px solid ${memo.visibility==='public'?'#0067C4':(memo.type==='checklist'?'#D20015':'#9EA2A1')};transition:box-shadow 0.15s;" onmouseover="this.style.boxShadow='rgba(0,0,0,0.1) 0px 4px 14px 0px'" onmouseout="this.style.boxShadow='none'">
+  // v19.45.0: 좌측 테두리 — 전체 공유 파랑 / 팀 공유 앰버 / 나만 보기(체크리스트 빨강·메모 회색)
+  const edgeColor = memo.visibility === 'public' ? '#0067C4'
+    : memo.visibility === 'team' ? '#B45309'
+    : (memo.type === 'checklist' ? '#D20015' : '#9EA2A1');
+  return `<div class="apple-card" style="padding:18px 20px;border-left:4px solid ${edgeColor};transition:box-shadow 0.15s;" onmouseover="this.style.boxShadow='rgba(0,0,0,0.1) 0px 4px 14px 0px'" onmouseout="this.style.boxShadow='none'">
     ${scopeLine}
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
       ${typeBadge}${visBadge}${syncBadge}
@@ -16463,7 +16536,11 @@ function _draftFormHTML(idPrefix) {
   const yearOpts = [];
   for (let y = yr - 1; y <= yr + 1; y++) yearOpts.push(`<option value="${y}"${y===yr?' selected':''}>${y}</option>`);
   const isChecklist = s.draftType === 'checklist';
+  // v19.45.0: 체크리스트는 '전체 공유'만 잠금 (팀 공유는 선택 가능)
   const visLocked = isChecklist;
+  const isEditing = !!s._editingId; // v19.45.0: 목록 카드 자리에서 수정 중
+  // 팀 공유 가능 여부 — 배정 심사원 + 관리자·품질담당자
+  const teamOK = s.draftStation ? isMemoTeamMember(parseInt(s.draftYear) || yr, s.draftStation) : true;
   const itemsHTML = (s.draftItems || []).map((it, i) =>
     `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
       <input type="text" class="apple-input" placeholder="항목 입력" value="${_esc(it.text)}" oninput="memoWorkspaceState.draftItems[${i}].text=this.value;" style="flex:1;padding:8px 12px;font-size:13px;">
@@ -16513,23 +16590,37 @@ function _draftFormHTML(idPrefix) {
   const wsSegDisabled = 'opacity:0.4;cursor:not-allowed;';
   const wsSegBase = 'border:none;border-radius:8px;padding:8px 18px;font-size:14px;cursor:pointer;transition:all 0.15s;letter-spacing:-0.2px;';
 
-  return `<div class="apple-card" id="${idPrefix}_form" style="padding:24px;">
+  // v19.45.0: 현재 선택된 공개범위 정규화 (체크리스트+전체공유, 팀 자격 없는데 팀 공유 등 무효 조합 보정)
+  let effVis = s.draftVisibility;
+  if (isChecklist && effVis === 'public') effVis = teamOK ? 'team' : 'private';
+  if (effVis === 'team' && !teamOK) effVis = 'private';
+  const teamHint = teamOK ? '같은 심사에 배정된 심사원끼리만 공유' : '이 대상에 배정된 심사원만 사용할 수 있습니다';
+
+  return `<div class="apple-card" id="${idPrefix}_form" style="padding:24px;${isEditing?'border:1.5px solid rgba(180,83,9,0.35);':''}">
+    ${isEditing ? '<div style="font-size:13px;font-weight:700;color:#B45309;margin-bottom:14px;display:flex;align-items:center;gap:6px;">✏️ 이 메모를 수정하고 있습니다</div>' : ''}
     <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center;">
       <!-- 타입 세그먼티드 -->
       <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:11px;padding:3px;">
         <button onclick="onMemoDraftType('note')" style="${wsSegBase}${s.draftType==='note'?wsSegActive:wsSegInactive}">📝 메모</button>
         <button onclick="onMemoDraftType('checklist')" style="${wsSegBase}${s.draftType==='checklist'?wsSegActive:wsSegInactive}">☑ 체크리스트</button>
       </div>
-      <!-- 공개범위 세그먼티드 -->
+      <!-- 공개범위 세그먼티드 — v19.45.0: 전체 공유 / 팀 공유 / 나만 보기 3단 -->
       <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:11px;padding:3px;">
-        <button onclick="${visLocked?'':`onMemoDraftVisibility('public')`}" ${visLocked?'disabled':''} style="${wsSegBase}${s.draftVisibility==='public'&&!visLocked?wsSegActive:wsSegInactive}${visLocked?wsSegDisabled:''}">전체 공유</button>
-        <button onclick="onMemoDraftVisibility('private')" style="${wsSegBase}${(s.draftVisibility==='private'||visLocked)?wsSegActive:wsSegInactive}">나만 보기${visLocked?' (자동)':''}</button>
+        <button onclick="${visLocked?'':`onMemoDraftVisibility('public')`}" ${visLocked?'disabled':''} title="${visLocked?'체크리스트는 전체 공유할 수 없습니다':'모든 사용자에게 공개'}" style="${wsSegBase}${effVis==='public'?wsSegActive:wsSegInactive}${visLocked?wsSegDisabled:''}">전체 공유</button>
+        <button onclick="${teamOK?`onMemoDraftVisibility('team')`:''}" ${teamOK?'':'disabled'} title="${teamHint}" style="${wsSegBase}${effVis==='team'?wsSegActive:wsSegInactive}${teamOK?'':wsSegDisabled}">👥 팀 공유</button>
+        <button onclick="onMemoDraftVisibility('private')" style="${wsSegBase}${effVis==='private'?wsSegActive:wsSegInactive}">나만 보기</button>
       </div>
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+    ${isEditing
+      ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;font-size:13px;color:#6E7273;background:rgba(0,0,0,0.03);border-radius:10px;padding:10px 14px;">
+          <span style="font-weight:600;color:#303A3C;">대상</span>
+          <span>${yr}년 · ${_esc(s.draftStation || '')}</span>
+          <span style="color:#9EA2A1;font-size:12px;">(수정 중에는 대상을 바꿀 수 없습니다)</span>
+         </div>`
+      : `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
       <div>
         <label class="apple-label" style="font-size:13px;">연도</label>
-        <select class="apple-input" onchange="memoWorkspaceState.draftYear=parseInt(this.value);" style="font-size:14px;">${yearOpts.join('')}</select>
+        <select class="apple-input" onchange="onMemoDraftYear(this.value)" style="font-size:14px;">${yearOpts.join('')}</select>
       </div>
       <div>
         <label class="apple-label" style="font-size:13px;">대상 구분</label>
@@ -16541,9 +16632,9 @@ function _draftFormHTML(idPrefix) {
       </div>
       <div>
         <label class="apple-label" style="font-size:13px;">대상</label>
-        <select class="apple-input" id="${idPrefix}_station" onchange="memoWorkspaceState.draftStation=this.value;" style="font-size:14px;">${_memoStationOptionsHTML(s.draftScopeType, s.draftStation)}</select>
+        <select class="apple-input" id="${idPrefix}_station" onchange="onMemoDraftStation(this.value)" style="font-size:14px;">${_memoStationOptionsHTML(s.draftScopeType, s.draftStation)}</select>
       </div>
-    </div>
+    </div>`}
     ${isChecklist
       ? `<div class="mb-4">
           <label class="apple-label" style="font-size:13px;">사전 확인 항목</label>
@@ -16557,11 +16648,11 @@ function _draftFormHTML(idPrefix) {
          </div>`
       : `<div class="mb-4">
           <label class="apple-label" style="font-size:13px;">내용</label>
-          <textarea class="apple-input" rows="6" placeholder="자유롭게 메모하세요 (공유: 공지/인수인계 / 나만 보기: 개인 메모)" oninput="memoWorkspaceState.draftContent=this.value;" style="resize:vertical;font-size:15px;line-height:1.6;padding:14px;">${_esc(s.draftContent)}</textarea>
+          <textarea class="apple-input" rows="6" placeholder="자유롭게 메모하세요 (전체 공유: 공지/인수인계 · 팀 공유: 심사팀 내부 · 나만 보기: 개인 메모)" oninput="memoWorkspaceState.draftContent=this.value;" style="resize:vertical;font-size:15px;line-height:1.6;padding:14px;">${_esc(s.draftContent)}</textarea>
          </div>`}
     <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button onclick="onMemoDraftReset()" class="pill-btn pill-btn-outline" style="font-size:14px;padding:10px 22px;">초기화</button>
-      <button onclick="onMemoDraftSave()" class="pill-btn pill-btn-primary" style="font-size:14px;padding:10px 28px;font-weight:600;">저장</button>
+      <button onclick="onMemoDraftReset()" class="pill-btn pill-btn-outline" style="font-size:14px;padding:10px 22px;">${isEditing ? '취소' : '초기화'}</button>
+      <button onclick="onMemoDraftSave()" class="pill-btn pill-btn-primary" style="font-size:14px;padding:10px 28px;font-weight:600;">${isEditing ? '수정 저장' : '저장'}</button>
     </div>
   </div>`;
 }
@@ -16603,12 +16694,23 @@ function _renderMemoWorkspaceInner(el) {
     });
   }
 
+  // v19.45.0: 수정 중이면 좌측 신규 작성 폼 대신 안내를 표시하고, 폼은 목록의 해당 카드 자리에 렌더한다.
+  // (draft 상태를 신규/수정이 공유하므로 폼을 두 곳에 동시에 그리면 입력이 서로 덮어쓰게 됨)
+  const editingId = s._editingId || null;
+  const leftPane = editingId
+    ? `<div class="apple-card" style="padding:22px;text-align:center;color:#6E7273;font-size:14px;line-height:1.6;">
+         ✏️ 오른쪽 목록에서 메모를 수정하고 있습니다.<br>
+         <span style="font-size:13px;color:#9EA2A1;">수정을 마치거나 취소하면 여기서 새 메모를 작성할 수 있습니다.</span>
+         <div style="margin-top:14px;"><button onclick="onMemoDraftReset()" class="pill-btn pill-btn-outline" style="font-size:13px;padding:8px 18px;">수정 취소</button></div>
+       </div>`
+    : _draftFormHTML('memoWS');
+
   // v19.11.3: 워크스페이스 폰트·여백 일제 향상
   el.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
       <div class="md:col-span-5">
         <div style="font-size:14px;font-weight:700;color:#303A3C;margin-bottom:12px;padding-left:2px;letter-spacing:-0.2px;">✏️ 빠른 작성</div>
-        ${_draftFormHTML('memoWS')}
+        ${leftPane}
       </div>
       <div class="md:col-span-7">
         <div style="font-size:14px;font-weight:700;color:#303A3C;margin-bottom:12px;padding-left:2px;letter-spacing:-0.2px;">🗂 메모 보기</div>
@@ -16620,21 +16722,54 @@ function _renderMemoWorkspaceInner(el) {
         <div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;">
           ${['all','note','checklist'].map(t => `<button onclick="memoWorkspaceState.filterType='${t}';renderMemoWorkspace();" class="pill-btn ${s.filterType===t?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${t==='all'?'전체':t==='note'?'📝 메모':'☑ 체크리스트'}</button>`).join('')}
           <span style="border-left:1px solid rgba(192,206,209,0.5);margin:0 2px;"></span>
-          ${['all','public','private'].map(v => `<button onclick="memoWorkspaceState.filterVisibility='${v}';renderMemoWorkspace();" class="pill-btn ${s.filterVisibility===v?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${v==='all'?'전체':v==='public'?'공유':'나만 보기'}</button>`).join('')}
+          ${['all','public','team','private'].map(v => `<button onclick="memoWorkspaceState.filterVisibility='${v}';renderMemoWorkspace();" class="pill-btn ${s.filterVisibility===v?'pill-btn-primary':'pill-btn-outline'}" style="font-size:13px;padding:7px 16px;font-weight:600;">${v==='all'?'전체':v==='public'?'공유':v==='team'?'👥 팀 공유':'나만 보기'}</button>`).join('')}
         </div>
         <div style="font-size:14px;color:#9EA2A1;margin-bottom:12px;font-weight:600;">총 ${list.length}건</div>
         <div style="display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow-y:auto;padding-right:6px;">
+          ${(editingId && !list.some(m => m.id === editingId)) ? _draftFormHTML('memoWSInline') : ''}
           ${list.length === 0
-            ? '<div class="apple-card" style="padding:32px;text-align:center;color:#9EA2A1;font-size:15px;">메모가 없습니다.<br><span style="font-size:13px;">좌측에서 작성해보세요</span></div>'
-            : list.map(m => _renderMemoCard(m, { showScope: true })).join('')}
+            ? (editingId ? '' : '<div class="apple-card" style="padding:32px;text-align:center;color:#9EA2A1;font-size:15px;">메모가 없습니다.<br><span style="font-size:13px;">좌측에서 작성해보세요</span></div>')
+            : list.map(m => (editingId && m.id === editingId)
+                ? _draftFormHTML('memoWSInline')
+                : _renderMemoCard(m, { showScope: true })).join('')}
         </div>
       </div>
     </div>`;
 }
 
 // 작업창 액션
-function onMemoDraftType(t) { memoWorkspaceState.draftType = t; if (t === 'checklist') memoWorkspaceState.draftVisibility = 'private'; renderMemoWorkspace(); }
-function onMemoDraftVisibility(v) { if (memoWorkspaceState.draftType === 'checklist') return; memoWorkspaceState.draftVisibility = v; renderMemoWorkspace(); }
+// v19.45.0: 체크리스트로 바꾸면 '전체 공유'만 불가 — 팀 공유 가능하면 팀 공유로, 아니면 나만 보기로 강등
+function onMemoDraftType(t) {
+  const s = memoWorkspaceState;
+  s.draftType = t;
+  if (t === 'checklist' && s.draftVisibility === 'public') {
+    s.draftVisibility = (s.draftStation && isMemoTeamMember(parseInt(s.draftYear), s.draftStation)) ? 'team' : 'private';
+  }
+  renderMemoWorkspace();
+}
+function onMemoDraftVisibility(v) {
+  const s = memoWorkspaceState;
+  if (s.draftType === 'checklist' && v === 'public') return; // 체크리스트는 전체 공유 불가
+  if (v === 'team' && s.draftStation && !isMemoTeamMember(parseInt(s.draftYear), s.draftStation)) {
+    showToast('이 대상에 배정된 심사원만 팀 공유를 사용할 수 있습니다.', 'error');
+    return;
+  }
+  s.draftVisibility = v;
+  renderMemoWorkspace();
+}
+// v19.45.0: 연도·대상이 바뀌면 팀 공유 자격이 달라지므로 폼을 다시 그린다(무효 조합 자동 보정)
+function onMemoDraftYear(v) {
+  const s = memoWorkspaceState;
+  s.draftYear = parseInt(v);
+  if (s.draftVisibility === 'team' && s.draftStation && !isMemoTeamMember(s.draftYear, s.draftStation)) s.draftVisibility = 'private';
+  renderMemoWorkspace();
+}
+function onMemoDraftStation(v) {
+  const s = memoWorkspaceState;
+  s.draftStation = v;
+  if (s.draftVisibility === 'team' && v && !isMemoTeamMember(parseInt(s.draftYear), v)) s.draftVisibility = 'private';
+  renderMemoWorkspace();
+}
 function onMemoDraftScopeType(t) { memoWorkspaceState.draftScopeType = t; memoWorkspaceState.draftStation = ''; renderMemoWorkspace(); }
 // v19.16.2: kind 인자 추가 ('item' | 'heading1' | 'heading2'). 누락 시 'item'.
 function onMemoDraftAddItem(prefix, kind) {
@@ -16829,6 +16964,7 @@ function onMemoDraftSave() {
       if (obj.kind === 'item') {
         obj.checked = !!it.checked;
         if (it.checked && it.checkedAt) obj.checkedAt = it.checkedAt;
+        if (it.checked && it.checkedByName) obj.checkedByName = it.checkedByName; // v19.45.0
       }
       return obj;
     });
@@ -16949,23 +17085,24 @@ function bulkChecklistAction(year, station, memoId, op) {
   const key = year + '_' + station;
   const memo = all[key] && all[key][memoId];
   if (!memo || memo.type !== 'checklist') { showToast('메모를 찾을 수 없습니다.', 'error'); return; }
-  const isOrphan = !memo.authorEmpNo;
-  const isMine = memo.authorEmpNo === currentUser.empNo || isOrphan;
-  if (!isMine) { showToast('권한이 없습니다.', 'error'); return; }
-  if (isOrphan) { memo.authorEmpNo = currentUser.empNo; memo.authorName = currentUser.name || currentUser.empNo; }
+  // v19.45.0: 본인 / 팀 공유의 팀원 — 카드의 ⋯ 메뉴 노출 조건(canEditMemo)과 동일 기준
+  if (!canEditMemo(memo)) { showToast('권한이 없습니다.', 'error'); return; }
+  if (!memo.authorEmpNo) { memo.authorEmpNo = currentUser.empNo; memo.authorName = currentUser.name || currentUser.empNo; }
   const now = new Date().toISOString();
+  const myName = currentUser.name || currentUser.empNo || '';
   let newItems;
   if (op === 'checkAll') {
     newItems = (memo.items || []).map(it => {
       const kind = it.kind || 'item';
       if (kind !== 'item') return it;
-      return Object.assign({}, it, { checked: true, checkedAt: it.checkedAt || now });
+      // v19.45.0: 이미 체크된 항목은 원래 체크한 사람을 유지
+      return Object.assign({}, it, { checked: true, checkedAt: it.checkedAt || now, checkedByName: it.checked ? (it.checkedByName || myName) : myName });
     });
   } else if (op === 'uncheckAll') {
     newItems = (memo.items || []).map(it => {
       const kind = it.kind || 'item';
       if (kind !== 'item') return it;
-      return Object.assign({}, it, { checked: false, checkedAt: null });
+      return Object.assign({}, it, { checked: false, checkedAt: null, checkedByName: null });
     });
   } else if (op === 'removeCompleted') {
     if (!confirm('완료 처리된 항목을 모두 제거하시겠습니까?')) return;
@@ -17025,16 +17162,19 @@ function onMemoEdit(memoId, year, station) {
     text: it.text,
     checked: !!it.checked,
     checkedAt: it.checkedAt || null,
+    checkedByName: it.checkedByName || null, // v19.45.0: 팀 공유 체크 기록 보존
     kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
     emoji: (typeof it.emoji === 'string') ? it.emoji : ''
   }));
-  // 기존 메모 삭제 후 새로 저장 패턴 단순화 — 사용자에게 알림 후 진행
-  // 여기서는 "복사 후 수정"처럼 동작하지 않고 실제 갱신을 위해 ID를 보존해야 한다.
-  // saveMemo는 id 있으면 갱신하므로, draft에 _editingId를 보관.
+  // saveMemo는 id가 있으면 갱신하므로 draft에 _editingId를 보관한다.
   memoWorkspaceState._editingId = memo.id;
   if (activeTab !== 7) switchTab(7);
   else renderMemoWorkspace();
-  showToast('수정 모드로 전환했습니다. 저장 시 갱신됩니다.', 'info');
+  // v19.45.0: 별도 작성 폼으로 이동하지 않고 목록의 그 카드 자리에서 편집 — 해당 위치로 스크롤
+  setTimeout(() => {
+    const form = document.getElementById('memoWSInline_form');
+    if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 60);
 }
 
 // =============================================================================
@@ -17058,8 +17198,10 @@ function _renderMemoPanelInner() {
   if (!station) return '<div style="font-size:13px;color:#9EA2A1;padding:14px;">지점을 선택하세요.</div>';
   const memos = listMemosVisibleToMe(year, station);
   const publicNotes = memos.filter(m => m.type === 'note' && m.visibility === 'public');
-  const myChecklists = memos.filter(m => m.type === 'checklist' && currentUser && m.authorEmpNo === currentUser.empNo);
-  const myNotes = memos.filter(m => m.type === 'note' && m.visibility === 'private' && currentUser && m.authorEmpNo === currentUser.empNo);
+  // v19.45.0: 팀 공유 섹션 신설 — 메모·체크리스트를 한 섹션에 (심사팀 공동 작업 영역)
+  const teamMemos = memos.filter(m => m.visibility === 'team');
+  const myChecklists = memos.filter(m => m.type === 'checklist' && m.visibility !== 'team' && isMemoMine(m));
+  const myNotes = memos.filter(m => m.type === 'note' && m.visibility === 'private' && isMemoMine(m));
 
   // v19.11.3: 빠른 작성 폼 — Notion 스타일, 폰트/패딩 키움
   const qd = _memoQuickDraft;
@@ -17077,19 +17219,28 @@ function _renderMemoPanelInner() {
   const segDisabled = 'opacity:0.4;cursor:not-allowed;';
   const segBtnBase = 'border:none;border-radius:7px;padding:6px 14px;font-size:13px;cursor:pointer;transition:all 0.15s;letter-spacing:-0.2px;';
 
-  const quickForm = !qd.open ? `<button onclick="onMemoQuickOpen()" style="background:none;border:1.5px dashed rgba(210,0,21,0.3);color:#D20015;border-radius:12px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:18px;display:inline-flex;align-items:center;gap:6px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.05)';this.style.borderColor='#D20015'" onmouseout="this.style.background='none';this.style.borderColor='rgba(210,0,21,0.3)'">+ 메모/체크리스트 추가</button>` : `
-    <div class="apple-card" style="padding:18px;margin-bottom:18px;background:#fafbfc;border:1px solid rgba(192,206,209,0.4);">
-      ${isEditing ? '<div style="font-size:13px;font-weight:700;color:#B45309;margin-bottom:12px;display:flex;align-items:center;gap:6px;">✏️ 메모 수정 중</div>' : ''}
+  // v19.45.0: 팀 공유 가능 여부 — 배정 심사원 + 관리자·품질담당자
+  const teamOK = isMemoTeamMember(year, station);
+  // 현재 선택된 공개범위 정규화 (체크리스트는 전체 공유 불가, 팀 자격 없으면 팀 공유 불가)
+  let effVis = qd.visibility;
+  if (isCl && effVis === 'public') effVis = teamOK ? 'team' : 'private';
+  if (effVis === 'team' && !teamOK) effVis = 'private';
+
+  // v19.45.0: 폼 본체를 변수로 분리 — 신규 작성이면 상단에, 수정이면 해당 카드 자리에 렌더한다.
+  const formHTML = `
+    <div class="apple-card" style="padding:18px;margin-bottom:18px;background:#fafbfc;border:1px solid ${isEditing?'rgba(180,83,9,0.35)':'rgba(192,206,209,0.4)'};">
+      ${isEditing ? '<div style="font-size:13px;font-weight:700;color:#B45309;margin-bottom:12px;display:flex;align-items:center;gap:6px;">✏️ 이 메모를 수정하고 있습니다</div>' : ''}
       <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
         <!-- 타입 세그먼티드 -->
         <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:10px;padding:3px;">
           <button onclick="onMemoQuickType('note')" style="${segBtnBase}${qd.type==='note'?segActive:segInactive}">📝 메모</button>
           <button onclick="onMemoQuickType('checklist')" style="${segBtnBase}${qd.type==='checklist'?segActive:segInactive}">☑ 체크리스트</button>
         </div>
-        <!-- 공개범위 세그먼티드 -->
+        <!-- 공개범위 세그먼티드 — v19.45.0: 전체 공유 / 팀 공유 / 나만 보기 -->
         <div style="display:inline-flex;background:rgba(17,17,17,0.06);border-radius:10px;padding:3px;">
-          <button onclick="${isCl?'':`onMemoQuickVisibility('public')`}" ${isCl?'disabled':''} style="${segBtnBase}${qd.visibility==='public'&&!isCl?segActive:segInactive}${isCl?segDisabled:''}">전체 공유</button>
-          <button onclick="onMemoQuickVisibility('private')" style="${segBtnBase}${(qd.visibility==='private'||isCl)?segActive:segInactive}">나만 보기</button>
+          <button onclick="${isCl?'':`onMemoQuickVisibility('public')`}" ${isCl?'disabled':''} title="${isCl?'체크리스트는 전체 공유할 수 없습니다':'모든 사용자에게 공개'}" style="${segBtnBase}${effVis==='public'?segActive:segInactive}${isCl?segDisabled:''}">전체 공유</button>
+          <button onclick="${teamOK?`onMemoQuickVisibility('team')`:''}" ${teamOK?'':'disabled'} title="${teamOK?'이 심사에 배정된 심사원끼리만 공유':'이 심사에 배정된 심사원만 사용할 수 있습니다'}" style="${segBtnBase}${effVis==='team'?segActive:segInactive}${teamOK?'':segDisabled}">👥 팀 공유</button>
+          <button onclick="onMemoQuickVisibility('private')" style="${segBtnBase}${effVis==='private'?segActive:segInactive}">나만 보기</button>
         </div>
       </div>
       ${isCl
@@ -17102,6 +17253,12 @@ function _renderMemoPanelInner() {
       </div>
     </div>`;
 
+  // 상단 영역 — 수정 중에는 신규 작성 폼/버튼을 숨긴다(입력 상태를 공유하므로 동시 표시 불가)
+  const quickForm = isEditing ? ''
+    : (!qd.open
+      ? `<button onclick="onMemoQuickOpen()" style="background:none;border:1.5px dashed rgba(210,0,21,0.3);color:#D20015;border-radius:12px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:18px;display:inline-flex;align-items:center;gap:6px;transition:all 0.15s;" onmouseover="this.style.background='rgba(210,0,21,0.05)';this.style.borderColor='#D20015'" onmouseout="this.style.background='none';this.style.borderColor='rgba(210,0,21,0.3)'">+ 메모/체크리스트 추가</button>`
+      : formHTML);
+
   function section(title, color, list, emoji) {
     let h = `<div style="margin-bottom:24px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:0 2px;">
@@ -17109,16 +17266,25 @@ function _renderMemoPanelInner() {
         <span style="font-size:12px;color:#9EA2A1;font-weight:600;background:rgba(158,162,161,0.12);padding:1px 8px;border-radius:980px;">${list.length}</span>
       </div>`;
     if (list.length === 0) h += `<div style="font-size:13px;color:#C0CED1;padding:10px 4px;">아직 없습니다</div>`;
-    else h += '<div style="display:flex;flex-direction:column;gap:10px;">' + list.map(m => _renderMemoCard(m, { showScope: false, editInline: true })).join('') + '</div>';
+    // v19.45.0: 수정 중인 메모는 카드 대신 그 자리에 편집 폼을 렌더
+    else h += '<div style="display:flex;flex-direction:column;gap:10px;">' + list.map(m =>
+      (isEditing && m.id === qd._editingId) ? formHTML : _renderMemoCard(m, { showScope: false, editInline: true })
+    ).join('') + '</div>';
     h += '</div>';
     return h;
   }
+
+  // 안전망 — 수정 중인 메모가 아래 섹션 어디에도 속하지 않으면(필터·권한 변동 등) 폼이 사라지지 않도록 상단에 표시
+  const sectioned = publicNotes.concat(teamMemos, myChecklists, myNotes);
+  const orphanForm = (isEditing && !sectioned.some(m => m.id === qd._editingId)) ? formHTML : '';
 
   return `<div style="padding:20px 22px;">
     <div style="font-size:18px;font-weight:700;color:#1a1c1d;margin-bottom:4px;letter-spacing:-0.3px;">${_esc(station)}</div>
     <div style="font-size:13px;color:#9EA2A1;margin-bottom:18px;font-weight:500;">${year}년 메모 / 체크리스트</div>
     ${quickForm}
+    ${orphanForm}
     ${section('공유 메모', '#0067C4', publicNotes, '📢')}
+    ${section('팀 공유 (배정 심사원)', '#B45309', teamMemos, '👥')}
     ${section('내 체크리스트', '#D20015', myChecklists, '☑')}
     ${section('내 메모', '#6E7273', myNotes, '📝')}
   </div>`;
@@ -17264,6 +17430,7 @@ function onMemoQuickEdit(memoId, year, station) {
     text: it.text,
     checked: !!it.checked,
     checkedAt: it.checkedAt || null,
+    checkedByName: it.checkedByName || null, // v19.45.0: 팀 공유 체크 기록 보존
     kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
     emoji: (typeof it.emoji === 'string') ? it.emoji : ''
   }));
@@ -17275,8 +17442,27 @@ function onMemoQuickEdit(memoId, year, station) {
   const sheet = document.getElementById('memoBottomSheet');
   if (sheet && sheetBody && !sheet.classList.contains('hidden')) sheetBody.innerHTML = _renderMemoPanelInner();
 }
-function onMemoQuickType(t) { _memoQuickDraft.type = t; if (t === 'checklist') _memoQuickDraft.visibility = 'private'; renderMemoSidePanel(); }
-function onMemoQuickVisibility(v) { if (_memoQuickDraft.type === 'checklist') return; _memoQuickDraft.visibility = v; renderMemoSidePanel(); }
+// v19.45.0: 체크리스트는 '전체 공유'만 불가 — 팀 공유 가능하면 팀 공유로, 아니면 나만 보기로 강등
+function onMemoQuickType(t) {
+  _memoQuickDraft.type = t;
+  if (t === 'checklist' && _memoQuickDraft.visibility === 'public') {
+    const { year, station } = _phase4Scope();
+    _memoQuickDraft.visibility = isMemoTeamMember(year, station) ? 'team' : 'private';
+  }
+  renderMemoSidePanel();
+}
+function onMemoQuickVisibility(v) {
+  if (_memoQuickDraft.type === 'checklist' && v === 'public') return; // 체크리스트는 전체 공유 불가
+  if (v === 'team') {
+    const { year, station } = _phase4Scope();
+    if (!isMemoTeamMember(year, station)) {
+      showToast('이 심사에 배정된 심사원만 팀 공유를 사용할 수 있습니다.', 'error');
+      return;
+    }
+  }
+  _memoQuickDraft.visibility = v;
+  renderMemoSidePanel();
+}
 function onMemoQuickAddItem() { _memoQuickDraft.items.push({ text: '' }); renderMemoSidePanel(); }
 function onMemoQuickRemoveItem(i) { _memoQuickDraft.items.splice(i, 1); renderMemoSidePanel(); }
 function onMemoQuickSave() {
@@ -17294,6 +17480,7 @@ function onMemoQuickSave() {
       text: it.text,
       checked: !!it.checked,
       checkedAt: it.checkedAt || null,
+      checkedByName: it.checkedByName || null, // v19.45.0
       kind: (it.kind === 'heading1' || it.kind === 'heading2') ? it.kind : 'item',
       emoji: (typeof it.emoji === 'string') ? it.emoji : ''
     }));
@@ -17317,14 +17504,15 @@ function renderStationMemoCard() {
   const memos = listMemosVisibleToMe(stationDetailYear, stationDetailStation);
   let filtered = memos.slice();
   if (_sdMemoFilter === 'public') filtered = filtered.filter(m => m.visibility === 'public');
-  else if (_sdMemoFilter === 'mine_checklist') filtered = filtered.filter(m => m.type === 'checklist' && currentUser && m.authorEmpNo === currentUser.empNo);
-  else if (_sdMemoFilter === 'mine_note') filtered = filtered.filter(m => m.type === 'note' && m.visibility === 'private' && currentUser && m.authorEmpNo === currentUser.empNo);
+  else if (_sdMemoFilter === 'team') filtered = filtered.filter(m => m.visibility === 'team'); // v19.45.0
+  else if (_sdMemoFilter === 'mine_checklist') filtered = filtered.filter(m => m.type === 'checklist' && isMemoMine(m));
+  else if (_sdMemoFilter === 'mine_note') filtered = filtered.filter(m => m.type === 'note' && m.visibility === 'private' && isMemoMine(m));
 
   const top = _sdMemoExpanded ? filtered : filtered.slice(0, 6);
 
   let html = '';
   html += `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">`;
-  const filters = [['all','전체'],['public','공유'],['mine_checklist','내 체크리스트'],['mine_note','내 메모']];
+  const filters = [['all','전체'],['public','공유'],['team','👥 팀 공유'],['mine_checklist','내 체크리스트'],['mine_note','내 메모']];
   filters.forEach(([k, label]) => {
     html += `<button onclick="setSDMemoFilter('${k}')" class="pill-btn ${_sdMemoFilter===k?'pill-btn-primary':'pill-btn-outline'}" style="font-size:12px;padding:5px 12px;">${label}</button>`;
   });
@@ -17386,13 +17574,14 @@ onMemoDraftSave = function() {
       if (obj.kind === 'item') {
         obj.checked = !!it.checked;
         if (it.checked && it.checkedAt) obj.checkedAt = it.checkedAt;
+        if (it.checked && it.checkedByName) obj.checkedByName = it.checkedByName; // v19.45.0
       }
       return obj;
     });
   }
   const saved = saveMemo(memo);
   if (saved) {
-    showToast('저장되었습니다.', 'success');
+    showToast(s._editingId ? '수정되었습니다.' : '저장되었습니다.', 'success'); // v19.45.0
     s._editingId = null;
     onMemoDraftReset();
   }
@@ -18872,6 +19061,7 @@ Object.assign(window, {
   renderMemoWorkspace, renderMemoSidePanel, renderStationMemoCard, refreshStationMemoCard,
   toggleMemoPanel, openMemoPanel, closeMemoPanel, showMemoPanelControls, updateMemoBadge,
   onMemoDraftType, onMemoDraftVisibility, onMemoDraftScopeType,
+  onMemoDraftYear, onMemoDraftStation, // v19.45.0: 연도·대상 변경 시 팀 공유 자격 재판정
   onMemoDraftAddItem, onMemoDraftRemoveItem, onMemoDraftReset, onMemoDraftSave,
   onMemoDelete, onMemoChecklistToggle, onMemoEdit,
   onMemoQuickOpen, onMemoQuickCancel, onMemoQuickType, onMemoQuickVisibility,
