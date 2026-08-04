@@ -993,11 +993,6 @@ select.apple-input {
             <input id="inputDateEnd" type="text" data-fp class="apple-input" placeholder="날짜 선택">
           </div>
         </div>
-        <!-- v19.46.0: 점검표 PDF 출력용 감사수검자(피심사자) -->
-        <div class="mt-5">
-          <label class="apple-label">감사수검자 <span style="font-weight:400;color:#9EA2A1;">(선택 · 점검표 PDF 상단에 표기)</span></label>
-          <input id="inputAuditees" type="text" class="apple-input" placeholder="예: 김영문, HAYASHI YURINA">
-        </div>
         <input id="inputAuditor" type="hidden" value="">
       </div>
       <!-- v19.10.0: 점검표 유형 선택 인라인 통합 (Phase 2 + Phase 3 병합) -->
@@ -1029,6 +1024,11 @@ select.apple-input {
           <button id="memoPanelToggleDesktop" onclick="toggleMemoPanel()" class="hidden md:inline-flex" style="background:rgba(0,103,196,0.1);color:#0067C4;border:none;border-radius:980px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;align-items:center;gap:4px;">📋 메모/체크리스트</button>
         </div>
         <div id="phase4CompanyInfo" style="font-size:14px;color:#565A5B;margin-top:4px;"></div>
+        <!-- v19.46.1: 감사수검자는 점검표별 입력 — 여객·램프 협력사는 조업사 인원이 수검자라 공통값으로 묶을 수 없음 -->
+        <div style="margin-top:10px;max-width:560px;">
+          <label class="apple-label">감사수검자 <span style="font-weight:400;color:#9EA2A1;">(선택 · 이 점검표 PDF 상단에 표기)</span></label>
+          <input id="phase4Auditees" type="text" class="apple-input" placeholder="예: 김영문 지점장, HAYASHI YURINA 사원" oninput="markUnsaved()">
+        </div>
         <div id="maturityHeaderPanel" class="hidden" style="margin-top:8px;padding:16px;background:#f9f9fb;border-radius:12px;font-size:13px;color:#565A5B;"></div>
       </div>
       <div id="phase4Body" style="display:flex;gap:16px;align-items:flex-start;">
@@ -1604,7 +1604,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.46.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.46.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1782,7 +1782,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.46.0',
+  version: '19.46.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -5305,7 +5305,6 @@ function inputSearch() {
   document.getElementById('inputDateStart').value = today;
   document.getElementById('inputDateEnd').value = today;
   document.getElementById('inputAuditor').value = '';
-  _setAuditeesInput(''); // v19.46.0
 
   // 기존 데이터에서 심사원/심사일 가져오기 (있으면)
   const anyRecord = allData.find(d => d.year == selectedYear && d.station === selectedStation);
@@ -5313,7 +5312,6 @@ function inputSearch() {
     if (anyRecord.auditor) document.getElementById('inputAuditor').value = anyRecord.auditor;
     if (anyRecord.auditDateStart) document.getElementById('inputDateStart').value = anyRecord.auditDateStart;
     if (anyRecord.auditDateEnd) document.getElementById('inputDateEnd').value = anyRecord.auditDateEnd;
-    if (anyRecord.auditees) _setAuditeesInput(anyRecord.auditees); // v19.46.0
     // 구버전 호환: auditDate만 있는 경우
     if (!anyRecord.auditDateStart && anyRecord.auditDate) {
       document.getElementById('inputDateStart').value = anyRecord.auditDate.length === 7 ? anyRecord.auditDate + '-01' : anyRecord.auditDate;
@@ -5533,6 +5531,9 @@ function selectChecklistType(type) {
     currentScores = {};
     currentRemarks = {};
   }
+  // v19.46.1: 감사수검자는 이 점검표의 레코드에서만 채운다.
+  // 조건 없이 매번 세팅해야 다른 점검표로 넘어갈 때 직전 값이 남지 않음.
+  _setAuditeesInput(record && record.auditees ? record.auditees : '');
 
   document.getElementById('phase4TypeBadge').textContent = getTypeLabel(type);
   document.getElementById('phase4CompanyInfo').textContent = company ? `협력사: ${company}` : '';
@@ -6047,14 +6048,17 @@ function applyPartialFlag(record, checklist) {
 }
 
 // v19.46.0: 감사수검자(피심사자) — 점검표 PDF 상단 정보표에 표기. optional 필드라 값이 없으면 record에 키를 넣지 않음.
+// v19.46.1: 공통(Phase 2) → 점검표별(Phase 4) 입력으로 이동. 여객·램프 협력사 점검표는
+//           조업사 인원이 수검자라 지점 공통값 하나로 묶을 수 없었음.
 function _setAuditeesInput(v) {
-  const el = document.getElementById('inputAuditees');
+  const el = document.getElementById('phase4Auditees');
   if (el) el.value = v || '';
 }
 function _getAuditeesInput() {
-  const el = document.getElementById('inputAuditees');
+  const el = document.getElementById('phase4Auditees');
   return el ? el.value.trim() : '';
 }
+function markUnsaved() { unsavedChanges = true; }
 
 async function saveAssessment() {
   if (!requireRole('auditor')) return;
@@ -6702,8 +6706,7 @@ function renderGroupReadOnlyDetail(gIdx, group) {
     html += `<div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2">`;
     html += `<div class="flex gap-4"><div><span style="font-size:12px;color:#9EA2A1;">심사원</span><div style="font-size:14px;font-weight:600;color:#303A3C;">${auditorDisplay}</div></div>`;
     html += `<div><span style="font-size:12px;color:#9EA2A1;">심사일</span><div style="font-size:14px;font-weight:600;color:#303A3C;">${dateDisplay}</div></div>`;
-    // v19.46.0: 감사수검자 — 입력된 경우에만 표시
-    if (anyRecord?.auditees) html += `<div><span style="font-size:12px;color:#9EA2A1;">감사수검자</span><div style="font-size:14px;font-weight:600;color:#303A3C;">${_esc(anyRecord.auditees)}</div></div>`;
+    // v19.46.1: 감사수검자는 점검표별 값이라 공통 헤더가 아니라 각 점검표 카드에 표시
     // v19.44.0: 확정(잠금) 표시 — 수정 버튼이 왜 없는지 화면에서 알 수 있도록
     const _lockInfo = getTargetLock(group.year, group.station);
     if (_lockInfo) html += `<div><span style="font-size:12px;color:#9EA2A1;">상태</span><div style="font-size:13px;font-weight:600;color:#D20015;">확정됨${_lockInfo.lockedByName ? ' · ' + _lockInfo.lockedByName : ''}</div></div>`;
@@ -6740,6 +6743,8 @@ function renderGroupReadOnlyDetail(gIdx, group) {
       html += `</span>`;
       if (company) html += `<span style="font-size:11px;color:#9EA2A1;">${company}</span>`;
       html += `</div>`;
+      // v19.46.1: 감사수검자는 점검표별 값 — 입력된 경우에만 표시
+      if (entry.record.auditees) html += `<div style="font-size:11px;color:#9EA2A1;margin-bottom:6px;">수검자: <span style="color:#565A5B;">${_esc(entry.record.auditees)}</span></div>`;
 
       if (method === 'binary') {
         // 바이너리 채점 카드
@@ -6837,6 +6842,8 @@ function showTypeDetail(gIdx, type) {
   html += `<span class="badge-pill" style="background:${isBinary ? '#6366F1' : '#D20015'};color:#fff;font-size:13px;padding:4px 14px;">${typeLabel}</span>`;
   html += `<span style="font-size:14px;font-weight:600;color:#303A3C;">${group.station}</span>`;
   if (entry.company) html += `<span style="font-size:12px;color:#9EA2A1;">${entry.company}</span>`;
+  // v19.46.1: 감사수검자(점검표별)
+  if (entry.record.auditees) html += `<span style="font-size:12px;color:#9EA2A1;">수검자: ${_esc(entry.record.auditees)}</span>`;
   // v19.46.0: 점검표 원본 양식 출력
   html += `<button onclick="event.stopPropagation();openChecklistSheetPicker(${group.year},'${group.station}','${type}','${entry.company || ''}')" class="pill-btn pill-btn-outline" style="padding:4px 12px;font-size:12px;" title="점검표 양식으로 인쇄/PDF 저장">점검표 PDF</button>`;
   html += `</div>`;
@@ -6917,8 +6924,7 @@ function startGroupEditCommon(gIdx) {
   html += `<div><label class="apple-label">심사 시작일</label><input id="groupDateStart_${gIdx}" type="text" data-fp value="${anyRecord.auditDateStart || anyRecord.auditDate || ''}" class="apple-input" onchange="linkDatePair('groupDateStart_${gIdx}','groupDateEnd_${gIdx}')"></div>`;
   html += `<div><label class="apple-label">심사 종료일</label><input id="groupDateEnd_${gIdx}" type="text" data-fp value="${anyRecord.auditDateEnd || ''}" class="apple-input" min="${anyRecord.auditDateStart || ''}"></div>`;
   html += `</div>`;
-  // v19.46.0: 감사수검자(피심사자) — 점검표 PDF 상단 정보표에 표기
-  html += `<div class="mb-4"><label class="apple-label">감사수검자 <span style="font-weight:400;color:#9EA2A1;">(선택 · 점검표 PDF 상단에 표기)</span></label><input id="groupAuditees_${gIdx}" type="text" value="${_esc(anyRecord.auditees || '')}" class="apple-input" placeholder="예: 김영문, HAYASHI YURINA"></div>`;
+  // v19.46.1: 감사수검자는 여기(공통)가 아니라 점검표별 '수정'에서 입력한다.
   html += `<div class="flex gap-3 justify-end">`;
   html += `<button onclick="event.stopPropagation();cancelGroupEdit(${gIdx})" class="pill-btn pill-btn-outline">취소</button>`;
   html += `<button onclick="event.stopPropagation();saveGroupCommon(${gIdx})" class="pill-btn pill-btn-primary">일괄 저장</button>`;
@@ -6947,9 +6953,6 @@ async function saveGroupCommon(gIdx) {
   const dateStart = document.getElementById(`groupDateStart_${gIdx}`).value;
   const dateEnd = document.getElementById(`groupDateEnd_${gIdx}`).value;
   const auditDate = dateStart ? dateStart.slice(0, 7) : '';
-  // v19.46.0: 감사수검자 — 비우면 필드 자체를 제거(데이터 청결)
-  const auditeesEl = document.getElementById(`groupAuditees_${gIdx}`);
-  const auditees = auditeesEl ? auditeesEl.value.trim() : '';
 
   let updated = 0;
   const changedRecords = []; // v19.44.0: 실제로 바뀐 레코드만 기록
@@ -6966,7 +6969,7 @@ async function saveGroupCommon(gIdx) {
       allData[recordIdx].auditDate = auditDate;
       allData[recordIdx].auditDateStart = dateStart;
       allData[recordIdx].auditDateEnd = dateEnd;
-      if (auditees) allData[recordIdx].auditees = auditees; else delete allData[recordIdx].auditees; // v19.46.0
+      // v19.46.1: auditees는 공통 저장 대상이 아님 — 개별 필드 대입이라 기존 값이 그대로 보존됨
       _stampRecord(allData[recordIdx]);
       changedRecords.push(allData[recordIdx]);
       updated++;
@@ -7012,6 +7015,9 @@ function startGroupTypeEdit(gIdx, type) {
   setEditBaseline(entry.year, entry.station, type, entry.company, entry.record); // v19.44.0: 충돌 감지 기준
   const container = document.getElementById(`viewGroupDetail_${gIdx}`);
   let html = `<div style="margin-bottom:12px;"><span class="badge-pill" style="background:#D20015;color:#fff;font-size:13px;padding:4px 14px;">${getTypeLabel(type)} 점수 수정</span></div>`;
+  // v19.46.1: 감사수검자는 점검표별 값 (여객·램프는 조업사 인원)
+  html += `<div class="apple-card" style="padding:14px;margin-bottom:12px;"><label class="apple-label">감사수검자 <span style="font-weight:400;color:#9EA2A1;">(선택 · 이 점검표 PDF 상단에 표기)</span></label>`
+    + `<input id="groupTypeAuditees_${gIdx}" type="text" value="${_esc(entry.record.auditees || '')}" class="apple-input" placeholder="예: 김영문 지점장, HAYASHI YURINA 사원" onclick="event.stopPropagation();"></div>`;
 
   const checklist = getChecklist(type);
   const isBinaryEdit = getScoringMethod(type) === 'binary';
@@ -7073,6 +7079,12 @@ async function saveGroupTypeEdit(gIdx, type) {
     if (!(await confirmNoEditConflict(allData[recordIdx]))) { showToast('저장을 취소했습니다.', 'info'); return; }
     allData[recordIdx].scores = { ...editingScores };
     allData[recordIdx].remarks = { ...(allData[recordIdx].remarks || {}), ...editingRemarks };
+    // v19.46.1: 감사수검자(점검표별) — 비우면 필드 자체를 제거
+    const _aeEl = document.getElementById(`groupTypeAuditees_${gIdx}`);
+    if (_aeEl) {
+      const _ae = _aeEl.value.trim();
+      if (_ae) allData[recordIdx].auditees = _ae; else delete allData[recordIdx].auditees;
+    }
     // v19.43.1: 작성 중(partial) 플래그 재계산 — saveEdit와 동일 기준
     const judged = applyPartialFlag(allData[recordIdx], getChecklist(type));
     _stampRecord(allData[recordIdx]); // v19.44.0: 최종 수정자·시각 기록
@@ -7189,7 +7201,11 @@ function renderEditDetail(idx, entry) {
   html += `<div id="editAuditorPicker_${idx}"></div>`;
   html += `<div><label class="apple-label">심사 시작일</label><input id="editDateStart_${idx}" type="text" data-fp value="${entry.record.auditDateStart || entry.record.auditDate || ''}" class="apple-input" onchange="linkDatePair('editDateStart_${idx}','editDateEnd_${idx}')"></div>`;
   html += `<div><label class="apple-label">심사 종료일</label><input id="editDateEnd_${idx}" type="text" data-fp value="${entry.record.auditDateEnd || ''}" class="apple-input" min="${entry.record.auditDateStart || ''}"></div>`;
-  html += `</div></div>`;
+  html += `</div>`;
+  // v19.46.1: 감사수검자는 점검표별 값 (여객·램프는 조업사 인원)
+  html += `<div style="margin-top:16px;"><label class="apple-label">감사수검자 <span style="font-weight:400;color:#9EA2A1;">(선택 · 이 점검표 PDF 상단에 표기)</span></label>`
+    + `<input id="editAuditees_${idx}" type="text" value="${_esc(entry.record.auditees || '')}" class="apple-input" placeholder="예: 김영문 지점장, HAYASHI YURINA 사원"></div>`;
+  html += `</div>`;
 
   // 점수 수정 체크리스트
   for (const [catName, catData] of Object.entries(checklist)) {
@@ -7280,6 +7296,12 @@ async function saveEdit(idx) {
     allData[recordIdx].auditDate = auditDate;
     allData[recordIdx].auditDateStart = auditDateStart;
     allData[recordIdx].auditDateEnd = auditDateEnd;
+    // v19.46.1: 감사수검자(점검표별) — 비우면 필드 자체를 제거
+    const _aeEl2 = document.getElementById(`editAuditees_${idx}`);
+    if (_aeEl2) {
+      const _ae2 = _aeEl2.value.trim();
+      if (_ae2) allData[recordIdx].auditees = _ae2; else delete allData[recordIdx].auditees;
+    }
     // v19.43.1: 작성 중(partial) 플래그 재계산 — 이전엔 조회 화면에서 미입력 항목을 채워 저장해도
     // partial이 남아 완료·점수 집계에 반영되지 않았음(입력 탭에서 재저장해야 해소되던 버그)
     const judged = applyPartialFlag(allData[recordIdx], getChecklist(entry.type));
@@ -7377,14 +7399,12 @@ function navigateToInput(year, station, type) {
   document.getElementById('inputDateStart').value = today;
   document.getElementById('inputDateEnd').value = today;
   document.getElementById('inputAuditor').value = '';
-  _setAuditeesInput(''); // v19.46.0
 
   const anyRecord = allData.find(d => d.year == year && d.station === station);
   if (anyRecord) {
     if (anyRecord.auditor) document.getElementById('inputAuditor').value = anyRecord.auditor;
     if (anyRecord.auditDateStart) document.getElementById('inputDateStart').value = anyRecord.auditDateStart;
     if (anyRecord.auditDateEnd) document.getElementById('inputDateEnd').value = anyRecord.auditDateEnd;
-    if (anyRecord.auditees) _setAuditeesInput(anyRecord.auditees); // v19.46.0
     if (!anyRecord.auditDateStart && anyRecord.auditDate) {
       document.getElementById('inputDateStart').value = anyRecord.auditDate.length === 7 ? anyRecord.auditDate + '-01' : anyRecord.auditDate;
     }
@@ -19498,6 +19518,7 @@ Object.assign(window, {
   toggleSdDownloadMenu, downloadDetailPDF, downloadDetailHTML, copyDetailHTMLToClipboard, goToChecklistView,
   // 점검표 시트 출력 (v19.46.0) — inline onclick에서 호출하므로 반드시 노출 (미노출 시 무동작)
   openChecklistSheetPicker, openSdChecklistSheetPicker, openChecklistSheet, printChecklistSheet, downloadChecklistSheetPDF,
+  markUnsaved, // v19.46.1 — Phase 4 감사수검자 input oninput
   // 상세 페이지 연도 선택 드롭다운 (v19.30.0) — inline onclick 핸들러
   toggleSdYearMenu, changeDetailYear, getDetailYears,
   // 전자결재 결과보고 입력 패널 (v19.17.0) — inline onclick/oninput 핸들러
