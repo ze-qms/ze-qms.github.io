@@ -1604,7 +1604,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.46.1</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.47.0</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1782,7 +1782,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.46.1',
+  version: '19.47.0',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -14617,7 +14617,60 @@ const _SHEET_FONT = "'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto
 const _SHEET_BD = '#333';
 // 회사 CI 워드마크 (raw/eastar-logo.png, 300x76 RGBA) — data URI라 html2canvas/인쇄 모두 CORS 무관
 const _SHEET_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABMCAYAAADX/oqbAAAY10lEQVR42u1de3RU1bn/fXtmkkBmAvLImQgVrYgQZsJDUCBYax92LVdbvV6rq73e0t6+Lktr7dO2y7YsbbX2rdf21ttepYrWR1vrq5VbRW0V0VJJZoagiAICyUzCK5kZIJk5+7t/JJQQktn7PGaGP/ZvLdYik5M5Z++zv29/+3v8PsDAwMDAwMDAwMDAwMDAwMDAQIVk2HoyGbG+amaiOgiaKTAwcAJqZua9Zh6qA2GmwMDAib5iC0CjmQijsAwMTmpsbGoaD9A4AqaY2TAKy8DgpEbwkLQGrSxEzWwYhWVgcFIjIGUTADDQyEZ2jMIyMDiZISFmDRpYVNM+wZphZsQoLAMDnLz+dsw9Zm0hZmbEKCwDg5NYY2HJ0f8ycJ6ZEKOwDAxOSmw85ZQJAM7FMY11kZkVo7AMDE5K1BZrLyFQzT+NLaLFbROsM8zMGIVlYHBSgQFi8HUjPw/Y9EUzO0ZhGRicVEiFoysJtAAn+rRWpsafOt/MECroRjQwMBgTiUj0YgL+CCA0uvXFu4jkhfG+njfNbBmFZWBQFWyaMGNiQPZ/A8BXSHUSYT5AENf35LruvhAomtkzCsvAAOX2UyUnNJ5BRVrMhIsJuBxE4x1+RycxPwAh1hYkb1qYS/eYmTUKy8DArVISifrGuYGAmCYlnQaSp4FxGgjvBFOcCA0+36+TGJtBvB3MO5nE20JyZyGItxb0ZnaYN2IUloEBxibfi85h4NcgnkWgKVVQmEzgPWAk+nOZSxcBBfNWjMIyMIBOImiNrJsp2J7FLOYBWATwMoDG+aOceC8BfwPTPyRkKsi0LZSPbJuFbf1m9o3CMjDwjK2YWTsQ6fuAZPFpInzIhZI6AuBuBt/Tku1+mQA2s2oUloFB2dEeaVwimFaD6GwtZcX8FNvBz8w7vGe3mT2jsAwMqnNsLNT8hYgWK9TVnbFsZqWxqIzCMjCoKraMm3xqIRhsH8tJz+AX92Uz7zb5VzClOQYG1cacw/s6iek7Y0X9WPJKo6yqZGGlwtFmZq5oRxAhcHhuNvOy7vWpButctqGV0CeJZC2oY3aua28lGhTUZnkGk5xIkmodzUGIts89mN6ZmNB0DhVlpKorwg68GT/SuQvH+XNOPVtIu8npeLw8xubIlLOkDExz/QUBylOAMkcOdHV5TR9IobmGI/t3YUS3HGY81pJLXwK3PjJJdU7+Jpyv23AGdh45+vN2zKjL1R9ZUqmlwUQ8EOpvqx2oWYCToS+hFLSAGGsq+QCScTsAbYXFEldC0Jd0zccCuJCIWLe2ZDPf8vWoMHlyxB4IXcaMi5hwIeW4CQQQhGO7VRb4PQB2ks2fgKBrqkyruRzAruM/4mYI+oP2eGwgEbF+PxAWH1/U1XXInXAEz4TAnz0lPRUZtZFoIQHeDMZzAP0xnkv/1amvKYaOgQRb9xPRCMYGWu3eUhBXQeBqJ8PZ1zQQRtexz07Hzv6ksH5OoOYKWTePAljBAn8mOFO2PiWybThOtPb1dT0IxvYKPkKBQvRjRxrWLv4YznbMEIFuSESsT/rxwM8CwUTY+nqxP7SLgdUgfIyAJg9vYXcsn3keAEjwvahuKvj2WK5r/ciP47muRxm8xdnipn+tyfFtbh9lbl96LYPbfBhViEDzieg6IjyXjFibU+Ho5Y5PAozHR65dWS//z7UBGMAPAdgO3s2bI5U/AQwSN1eO015+f9GBA70EeqxKK/Te4xTWhUCRgR9UUEDWxA50ve3Up8DAb1zc7fPwoSB2SsRaR0S3gDDBp31rDQESAGJ9mVfAvLWK1tW9o1kfBEg364KAFVsmT3Z1xCWASeJW/60EmsOEhxMR6+E2y6rX/bv6fN16Bg8MW7wb5mcyedcK+WB6JzPfr/3cxMnRPh8yMt6qQJb+unnZ7g1DP62pwuosBEg8eMLhJZcL/gbgnkqUKUgSrhZkAEUXSpXmD9HcuvZjBOSRJwA63+fGBiOsKroHVYvA2GMuxEI2cx8DnU6tG7sQanV97M5nHgZjR3mON3S5OISn1mO6Vmb7Gdh5hBiJYf6rjT64Q5ys48RoH14IFFnwT8tvXslbjv63P5t5isF7K7w8/9Sc7dx3gsJaht2HmXFfBc7Dv5uX7Xzd1e6U3fsGg19weD+qs2uXun5f4f3XE6jV10lgfjWWS3cM/6gY4PuqoayY8crc7N43xvr9IqAAF+tCMruesysAm4G7y7cGaXkkUviJg79IDKNI9nxcnZ/PpMDYoLexUWqs39UFC/cwuL+ca6Ml3/308LVATA9U2F1x75hpDUR4puy7uS1u8fgVW1zsaOd7aEDwNf8lRpzgsxqs4ue/Vty6Yr5HQ2q2uBhkqzerj9aVVw7oc+31jXFNc/i1Yf6crf5E3qA1PptEcqzfzdq/vw/A38toXtxy4tKtoL+V+WBtLvzEmApLCtFZ3vvz2rmHOjd5XGluGlkuc3OrmkLdlUQI+zwNNkv7t6PLhai0j6AYJPGghnS9w/mRl897dkQ02tGDBeSeMlv6JARdrald3jr28sSb/txfdmvUKPa/nu3cphjH3vIodN4Sz3U9OvLzivpbCQ8dLRofdSGRzRFVDjwD7S3ZdFX4rFPjp0Yl4d3Oxz0oPI4T/Uh+QKcogAEJ5vsE8e8KghJA3cH5vTv7jjrVdRHLdf0KwK8U1L1XEaDY5fj5eDbzbr8I7lLEH3VcHEE0fmqDtRB9mVdcrdUihyGUi/GueC79qeE5cTV5bibmzwD0WY3bfFDL2iPeLUFg8MDCXKbHn7QeqhPqKe24QhFRZMY4Uk0T44qWXPphv+QwnsucPfb6bFxKEOsVT7Q7ns28w3Ue1rAj4QyNnTOJKkEGAl8koMbF8h/XGLHOgYNE1aHdq1lzB768JZd+pELTENd4ngR845JquoTAs12ee1oBvOIusZhmaCjF49biUPh/I4CNiXDTP4j4TsUXTOuInDq5Odu5r6RJLLiHJAEg36wZIg2rlZFQf4+GzAKpyrkYAjEmVo0r6Vdpjo6AVkVhdYyf0gTwta7PYS58Kgy8U+Oa51pyXY9ULgOBYxpO5aRfTJ0g+T33+Tu8zEMkba7aAJZjCnRLrut/GLxJnZBsR5XPUkeZoasz/p121O9xpEIeLYIN0EzVsXJvLv1G5XzkHNfwH6b8UViscTOiimnr4ytHAt8ulWXLyuMXt5ZJgeyp5DwwqS0sm2xfFFYqEr1KlU3NJbLHyUMqiACUAj2gEGhiekHtVw2EVNfMz2TyDD4CRo+PEbiYhhVWUtZ4fM8cqP2EWypa80jcomEV+mNh6QgDFUTFLaxUw9SZAH1Kkdd0xxCR2ljC0+piu8jqRMO8OJfhMIGVoD5KBOrY86aSQnMNGKsUQvcygOdLXGIlG6ae6bJ+TbUWM6pmD0zqYqkCC10l1EM+HQk7xk9pIqLJSr9NYaCkrHEwGNNYw8kKp8modYgtvCssLWFg9I4skK3IJEixCmP0hxt6rnwIdJPi5ViDis9Rvs6rGhedPiXSVJE6QGEPaPivsCPW05PzfLP6fZ8B4QxFAfsqsKKMhgOtbsqgNPyHKY3k3IUK4cotOLx7j+bmlWafjoTFoNBQNHxgzuF9nQrrPl4OawYeKHmIaJLSO3NoYodnhaUjDEyVd7i31zfGmehjCqVxx+xc114QfBUeCdbMS+MfJhoa31/+jHQd/wASfjBQSEE3KG70Uqwv/ZRQJlI6P4o31ltnl9ygBlNkksrGE4QlCmHe4GD2b2Fmf5JZWcQ1NsKEhlLTUFhUMZkthmo01ie/HkPHgHeFpSEM1XC4E4nvUqmYOiMfYvrRkM9ik0IBtTo0b+/WLLgOEtOj7eHGS8rsH9BY6N43lZqsvJaAqGJyvjlYuSE3KRTo+c6d9fAk0Dy4Xm4jRS4Ggx/XfaaWXNcj8/LdSZ/OTS0aZ+KkH/7MQiGYrNxxUCsglPJML3NMGEh1s5XJSHSlqxsWC9NUJu5o3EEEfFhpXWUHea+YZJvCbbEczkoouhNh6zYi+opO6gQR/SEZjl4Tz6X/u0x1mHFSRs68bSqbJsyYSHb/15V5XvnMcwAwkO/eUhOxBghUM1bRcaph+qRY3+79+gYIKcc5VgTtISCQilg/B/B+xWaUtQN191SJjC6mEUlLKt+T7Ff6M4PB4u5kJOrwCe3WeLZnvQuNFYcyKczd+hSjCEMM5VO9B5wqq6HyjO8rBv9P6woA5HhKKKJWczoip0528gyh2uKNzHhTcyEKEH6RDEdvewgIlCFEWPYjQFD2f03JSCGPOeOHSPI2l05RKCx1qJnjqkTdgXrqOCHBtd56z+xw9EWAPqfBgvDTBb07D1ZaWT0EBEDq9CGiYsqzP9MlakN2yqUmbtGgqvFHYZGGMHjYUhz7VZINTRcBdIHie28fzio6P5PJE/MbpT1+tqPcoDn79mXB8jIwH3Iw3mvnhK3H3FKsjIbUKU2naXQoLvTk0ls95boxrtW1roatnTaFZe7wWKg6MvFATVb+IhG2VifD1ppE2FqbikS7WNAzRDhPZzprs5GbUQXMjUx5p04PRJXS0HThuDnW7RyqUXSuiDXyODngLqlZjBQG/3ie3J3HT/BBSHmzKmJZFLU/GCUcvsnvotyWfHeCGB86nhdJuUVeXOwPPvtqODrVjymURanjcO/wknNji+A3QajXta6GBWPaFL6iVieMrkSls9wJVEdEK4hoBYj+jYguAmDpNjoF2ZdWq7Gp5GDcF6VBXCYDw52FPjvcdBZBQRHOyM/rzezwrLB0hMGj78WRiZkKRy8D0TmKF/azUU16VgrPcjdjiOUz61jyxczIOVBa54QI63xRWjr5LR7KpjZNsE4H4XOqrP6R1tXglAtVRvniwaxsNQoDgVgZs7B3SYkL4309bwJVI0tscUJnU8qfWZ4gl1sfE8d09IDblmjCqTB4mwT9zOtngSAT36S2rup+NkYNmoqvaNFWzKx1M455+e5nOEAXAI6y22NBwl9SU6eGPXI4lTWKG7CxCqpUAshvjPb5uJr+dsWz18rI3nP0tEqgXGvxUUhePD+fqUqlhhNfMZHGBl8mFw6ROx8Ta0Ww3a/PoAthQCWceJMi1lUEmqOYnl8fjZSc2AhhYAeVKL4kUG1/pPccZLHezVjm9Xa9umXc5HOLgeBjSivwmDN+njwiVgO43IPGimt0C3K1IFLhaLMkfFzlu5Ji3GujzXneBgJ85G0iOq1Emcz5AF7SqLHzeS3yHkhcNZplWB0DC3EV8YVKaWyeGJ0hbaU/0xWKtuugjYblyP4oLBB0UvyvZpBzviySBV0nXgrNNRL7btTYBr4clP1fdt0ilsVywJ3CAgb55Tc2Nb2rNserAXxEtzlDqqHxo7G+7t86vd/GQctnjgaJlNvd8XukjEfTBUHZf6CUWaAI07fq55r52eeXppGQDSeDstqOGXVZ6p+pGp1tl7awpK0xR4yXGOSYUryYT7/uzllPceUKku6TmoMOhaHYn0v/ymufN+WgI3tXEsQ7UHaz3Dvl8aKurkMMXJkKW7tAeu3HJIsfp9D8e6eZvqH6xtnKIldG77zDe3Y7r9O0zmWmSytgWizTfDktpWRxqAg5M7Q3TQXReHUoXfxyY1PT025bj/mFXEN/nFhZ31gs5LtfU9XrKdOdCM+2ZLv+WIlxtVlWPQ6pmU1CJFKeOz8HNcogALxWbmU16OMR36yQJ6GVfdjGCeB4LvNlZv6R5vVNsuHAR+C8+4ZOhnvC5c54c2WSJWlKItxUkldr07jp00B0ioKB4YGWXOb0llzm9FguE2HwF3TmvSYrr0W1IbFY46otalnTyMeTlSujCxymZnVVAdJeGhsfU1gBjfq0ClR88+HAdRjRYbd8QQCanAw3nQ3/GBi/xsBzmpXc/+KcFE3oRGAcv6NUvfUeAO+tXIa3LGnZhkJFnWLexPA2ZC3ZzO1g3KHxzq/bjhmVbwJ6PBZrpDS0acyBmmKogqR9rFPT6FGHiGEh6bjGQkuVlz5m+iQAX0FFyyNkq4+lFsxSflfz2iXloOxwk+smiSqcPFn6KK7DESXpxLVIIvgdjXQTKxs58tFqaismfq+GZL6i4c9UMcAWivnM6xUcWFkd7iMUFjwzH3pPpiteX9bE1dEHtdzXbwvqds6maS5WRNxvltFkuOkSzaxwX4/iXndqUTxx4Q/VKf6vxi5/DaqEtnorpsNlBlBJBoma+kYd0r6yu3CcR7B9srDUZRBAUZTvSOiV+thDPoyvDKRUpMXleM6tkyY1qDK/AaC2pj9ZKepjD2fxWW31VqPbWjQG740d6kmP7kiRt7MqKZFoYXukcUk1FFZAqFNamHlfvC/9qqLXffxkI+3TSUUh4Y34M3hUGPoLpYWBGdn5vZmdqBL18dALuMFpo9GAjVVEtKKEH+CstnqrcX4+0+11DIn6RouJbiI9ZZF28t39A7VxKEj9mfltJ/Vfg9THpeu+mPGEHeDPO5pzxgeJ6b9Kd6ARrQAeGS1hGMpo9dhWZEtv91vJcPRpUGmWBsF0DeCEB8unzkNMKzTCPE+qOi3pkPYxKudwT9Q3WgBNVRWr53oDHZ4VVn8hENPpuOE2nV6H+pi5NPUxA+lcLviTZdh92FkyZNOLDF7hRnigUeg5q96aLASfCRYXEWGlbi0bmNudkvqTj8fBFJprmPevKp06ABZSfKsl17nDYQLqOlYKpVw22pxPCUfPAlDrsYvMnVDQyoDoirZ660t+bFTOjt98uoaFdY8vFC4VZBllIEbqkrFtTuV3VIXFHFDmc4CwOBmOuqfhIKyNZ9NXjkl9TKVTKgh0q5vBsuA2lZolyOVHhScRbrqUwKtVRykiRI5vx+n4MP6kc9I+/xYoh/d/WkV9DOCh2KFOxy3ZO3Lp12dHrCOlLebRmRuYOU5EnoI/lJv0uAzv26fgSw8FCJ8A8IMKCbRIEq/SCKxsa8l3r9Mh7SP1RQ8kw1HbxeNuiefSS521YwvEVfYM+6BAha6zDEAQhAlu/zGPHhnRoT5mIJ3NBu50M8BsXzAFVRPKYVEr2w78XTWW45WVq9Wbt6nuXr/J3qRm/dd6TB/HhG+puuAIxo1uhncFYKt6IhJh4XpMHzfKilQ73BXBn8GEXFqjkTj8WfY3nb4ETZJ1NQHz1IIvv606yeg2ISFC2JWsEs51TImkwZ7qR19EUZ66rdFzntoip85yTH3swboCgGXYfZiB13SFZ8Hh3XuY+e0yT8YNjknjWF2jRbbeggiHC19QUh8DD8Vy6Q73Q1TmEYXqw8XFTou7GWCuk5s18tzu0hDoM5MNje9D2TuVnzqfGLdqHPtfmNvX/aAvTUi8peeIYqFmqd8RbD8a+4pKsDQcM9Hk0hOoj6k09TEDnW6tq2Fn503OhIdeLOPZ4P5Ytus2J3/SPm7adBBNVFxWHMh3b4FWizBcXy7raljm/CaNqFKrU/oc0uwG1JLvTug0UAXTf5a7NR0H7CeUZH3MBwMBuoqUfTX1KFy8d6jiJc6izeqGt4KK3o+EifpGS1UG4SMP0TJH1MeDf3STV0cdKzu6AGLQj3V0h/lbmTKBf7Qll/644+BF0NbZULRybgKy/6says+TdXWUV19jJz9/ZFkWq/xqTlhrCXdp5K19ODV+arQc7zsZsT4opXhZnXPHhxl06dyDad0o/JwKSKu2hdURmXKmmj2VDzdn93rmHxNSFSv319hc6oT6mMG7RG7SXd4HqbHTDksgZZZ+W1jPMOSyllzmq1co/Gmjh+D9KZtKjZ8aJYaq5s5miO94Xu7jKanuwo2lPCwXkI6IuRodbpL6x4fQ/RrssEEW9B/wkau9vb7xvcmw9SRAjyv78zF2MNG7WnLp55358Mte83ncuym9YEI6LC+bdaxH5Tudn890g3kNKhT63DppUoMW9fHgNn2zm95lJ5oVIZ1I1z9fUDzfnWJGn4dxppl5LQFfYiHPjGfT72vJdr/kYQRxP0oeWASU1MfMvGZettNzOYcOrz6IJnbUW3OOVTpo+EEcdAOK9e3eTyANpgLxaV3hHI7NEeu89rB1fTJi3ZiMWL9MhK21s8NWtxDiaRBdrN4Y8HMO1Cxs6UtvhKOKEPlrMHrLrLEmbA5HZ/vDvQ/AZVuvUdMa4rnMvycborezdFMu4gx9zNRuWeNFXnxXtU+I3Cl/cphfOebCTUasDzGLYKk39AZmhoBt/QTIJPMlDDFR5/sF2VKy6BVAD0QwHXfQykpv7Yg7JeP3pTPsxT80QuFPgWldaWvU3uBjzdwnwcIqfb/CgWOKPvACGCWLwkUg+Fc44qfnrwtbKLnH2i1rHDKZvKPx2XKnEIGzwbhsKHqss5l1gvGwEPYd8b6ebXDHeJtMTDjtDMj+ZWARKpesBoa9m9LXicdsocwrfM2ngICBgYEXbARC4yLWQhuYS6CzGDyBGBEGbAL1MXGvAG0D4+9zc+ktVIEjnYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYHBaPh/LPsFrC1OE+wAAAAASUVORK5CYII=';
-const _SHEET_W = 760; // 다운로드 경로 오프스크린 렌더 폭(px)
+const _SHEET_PAGE = { w: 210, h: 297, top: 13, side: 11, bottom: 14 }; // A4 mm
+const _SHEET_CONTENT_W = _SHEET_PAGE.w - _SHEET_PAGE.side * 2;         // 188mm
+
+// 인쇄·다운로드가 같은 CSS를 쓴다. prefix를 주면 앱 안(오프스크린 호스트)에서만 적용되도록 스코프.
+function _sheetPageCSS(prefix, forPrint) {
+  const p = prefix ? prefix + ' ' : '';
+  return `
+${p}.sheet-page{width:${_SHEET_PAGE.w}mm;height:${_SHEET_PAGE.h}mm;padding:${_SHEET_PAGE.top}mm ${_SHEET_PAGE.side}mm ${_SHEET_PAGE.bottom}mm;box-sizing:border-box;position:relative;background:#fff;overflow:hidden;${forPrint ? 'page-break-after:always;break-after:page;' : ''}}
+${p}.sheet-page:last-child{page-break-after:auto;break-after:auto;}
+${p}.sheet-page-inner{height:100%;width:100%;}
+${p}.sheet-page-footer{position:absolute;left:${_SHEET_PAGE.side}mm;right:${_SHEET_PAGE.side}mm;bottom:6mm;text-align:center;font-size:7.5pt;color:#666;}
+${p}.sheet-page-footer .sheet-dt{position:absolute;right:0;top:0;}
+${p}.sheet-row{page-break-inside:avoid;break-inside:avoid;}
+`;
+}
+
+// 인쇄창과 앱이 공유하는 페이지 분할기.
+// 행을 A4 본문 높이에 맞춰 담고, 넘치면 다음 페이지로 넘긴다 — 행 중간에서 잘리는 일이 없다.
+// 페이지 높이는 mm→px 환산이 아니라 실제 DOM 측정값(probe)을 쓴다.
+const _SHEET_PAGINATE_SRC = `function (root, dateStr) {
+  var kids = Array.prototype.slice.call(root.children);
+  if (!kids.length) return 0;
+  var probe = document.createElement('div');
+  probe.className = 'sheet-page';
+  probe.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;';
+  probe.innerHTML = '<div class="sheet-page-inner"></div>';
+  (root.parentNode || document.body).appendChild(probe);
+  var limit = probe.firstChild.clientHeight;
+  probe.parentNode.removeChild(probe);
+  if (!limit || limit < 50) limit = 1000;
+
+  var pages = [], cur = [], curH = 0;
+  for (var i = 0; i < kids.length; i++) {
+    var h = kids[i].offsetHeight;
+    if (cur.length && curH + h > limit) { pages.push(cur); cur = []; curH = 0; }
+    cur.push(kids[i]); curH += h;
+  }
+  if (cur.length) pages.push(cur);
+
+  root.innerHTML = '';
+  root.style.width = '';
+  for (var p = 0; p < pages.length; p++) {
+    var pg = document.createElement('div'); pg.className = 'sheet-page';
+    var inner = document.createElement('div'); inner.className = 'sheet-page-inner';
+    for (var j = 0; j < pages[p].length; j++) inner.appendChild(pages[p][j]);
+    pg.appendChild(inner);
+    var ft = document.createElement('div'); ft.className = 'sheet-page-footer';
+    ft.innerHTML = '<span>' + (p + 1) + '/' + pages.length + '</span>'
+      + '<span class="sheet-dt">' + dateStr + '</span>';
+    pg.appendChild(ft);
+    root.appendChild(pg);
+  }
+  return pages.length;
+}`;
 
 function _sheetEsc(s) {
   return _esc(s).replace(/\r?\n/g, '<br>');
@@ -14682,23 +14735,23 @@ function _sheetMarkHTML(c) {
   return c.on ? `<span style="font-weight:700;">[√]</span>` : `[&nbsp;]`;
 }
 
-// 표 본문 행들 (카테고리 행 + 항목 행) — 각 행이 최상위 블록
+// 표 본문 행들 (카테고리 행 + 항목 행) — 각 행이 페이지 분할 단위
 function _sheetRowsHTML(type, record) {
   const checklist = getChecklist(type) || {};
   const method = getScoringMethod(type);
   const spec = _sheetColSpec(method);
   const scores = (record && record.scores) || {};
   const remarks = (record && record.remarks) || {};
-  const rowOpen = `<div class="sheet-row" style="display:flex;align-items:stretch;min-height:38px;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
-  const cell = (w, extra, last) => `<div style="flex:0 0 ${w}%;max-width:${w}%;padding:6px 8px;box-sizing:border-box;${last ? '' : `border-right:1px solid ${_SHEET_BD};`}${extra || ''}">`;
-  const judgeCell = `padding:6px 2px;display:flex;align-items:center;justify-content:center;text-align:center;`;
+  const rowOpen = `<div class="sheet-row" style="display:flex;align-items:stretch;min-height:6.5mm;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
+  const cell = (w, extra, last) => `<div style="flex:0 0 ${w}%;max-width:${w}%;padding:1.2mm 1.5mm;box-sizing:border-box;${last ? '' : `border-right:1px solid ${_SHEET_BD};`}${extra || ''}">`;
+  const judgeCell = `padding:1.2mm 0.5mm;display:flex;align-items:center;justify-content:center;text-align:center;`;
 
   let h = '';
   for (const [catName, catData] of Object.entries(checklist)) {
     const items = (catData && catData.items) || [];
     // 카테고리 구분 행 (전폭)
     h += rowOpen;
-    h += `<div style="flex:1 1 100%;padding:7px 8px;box-sizing:border-box;font-weight:700;">${_esc(catName)}</div>`;
+    h += `<div style="flex:1 1 100%;padding:1.4mm 1.5mm;box-sizing:border-box;font-weight:700;">${_esc(catName)}</div>`;
     h += `</div>`;
 
     items.forEach(item => {
@@ -14711,10 +14764,10 @@ function _sheetRowsHTML(type, record) {
       const showNum = num && !/^\d/.test(String(item.text || '').trim());
       h += cell(spec.first);
       h += (showNum ? _esc(num) + ' ' : '') + _sheetEsc(item.text || '');
-      if (item.verification) h += `<div style="margin-top:8px;">${_sheetEsc(item.verification)}</div>`;
+      if (item.verification) h += `<div style="margin-top:1.2mm;">${_sheetEsc(item.verification)}</div>`;
       h += `</div>`;
       // 2열: 근거
-      h += cell(spec.manual, 'font-size:0.94em;');
+      h += cell(spec.manual, 'font-size:7pt;');
       h += _sheetEsc(item.manual || '');
       h += `</div>`;
       // 판정 열
@@ -14724,7 +14777,7 @@ function _sheetRowsHTML(type, record) {
         h += `</div>`;
       });
       // 비고
-      h += cell(spec.remark, '', true);
+      h += cell(spec.remark, 'font-size:7.5pt;', true);
       h += _sheetEsc(remarks[item.id] || '');
       h += `</div>`;
       h += `</div>`;
@@ -14733,7 +14786,7 @@ function _sheetRowsHTML(type, record) {
   return h;
 }
 
-// 시트 본문 전체 — 최상위 자식이 곧 페이지 분할 블록 단위
+// 시트 본문 — 최상위 자식이 곧 페이지 분할 단위(행)
 function buildChecklistSheetBody(year, station, type, record) {
   const reg = CHECKLIST_REGISTRY[type];
   const title = (reg && reg.name) || getTypeLabel(type) || type;
@@ -14749,32 +14802,32 @@ function buildChecklistSheetBody(year, station, type, record) {
 
   const infoRow = (l1, v1, l2, v2) =>
     `<div class="sheet-row" style="display:flex;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`
-    + `<div style="flex:0 0 50%;max-width:50%;padding:8px 10px;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">${_esc(l1)}: ${_esc(v1)}</div>`
-    + `<div style="flex:0 0 50%;max-width:50%;padding:8px 10px;box-sizing:border-box;">${_esc(l2)}: ${_esc(v2)}</div>`
+    + `<div style="flex:0 0 50%;max-width:50%;padding:1.6mm 2mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">${_esc(l1)}: ${_esc(v1)}</div>`
+    + `<div style="flex:0 0 50%;max-width:50%;padding:1.6mm 2mm;box-sizing:border-box;">${_esc(l2)}: ${_esc(v2)}</div>`
     + `</div>`;
 
   let h = '';
   // 블록 1: 로고 헤더 + 문서 제목 + 심사정보표
-  h += `<div class="sheet-block" style="padding-bottom:14px;">`;
-  h += `<div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid #C0CED1;">`;
-  h += `<img src="${_SHEET_LOGO}" alt="EASTAR JET" style="width:112px;height:auto;display:block;">`;
-  h += `<span style="font-size:1em;color:#303A3C;">안전보안실</span>`;
+  h += `<div class="sheet-row" style="padding-bottom:3mm;">`;
+  h += `<div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:1.5mm;border-bottom:1px solid #C0CED1;">`;
+  h += `<img src="${_SHEET_LOGO}" alt="EASTAR JET" style="width:24mm;height:auto;display:block;">`;
+  h += `<span style="font-size:8.5pt;color:#303A3C;">안전보안실</span>`;
   h += `</div>`;
-  h += `<div style="font-size:1.75em;font-weight:700;color:#000;margin:20px 0 16px;">${_esc(title)}</div>`;
+  h += `<div style="font-size:14pt;font-weight:700;color:#000;margin:4mm 0 3mm;">${_esc(title)}</div>`;
   h += `<div style="border-top:1px solid ${_SHEET_BD};">`;
   h += infoRow('감사 대상', targetLabel, '품질감사원', auditor);
   h += infoRow('감사 기간', period, '감사수검자', auditees);
   h += `</div>`;
   h += `</div>`;
 
-  // 블록 2: 열 헤더 (1쪽에만)
+  // 블록 2: 열 헤더 (1쪽에만 — 참고 양식과 동일)
   h += `<div class="sheet-row" style="display:flex;background:#D9D9D9;font-weight:700;text-align:center;border:1px solid ${_SHEET_BD};">`;
-  h += `<div style="flex:0 0 ${spec.first}%;max-width:${spec.first}%;padding:8px 6px;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">평가항목 / 질문(확인) 내용</div>`;
-  h += `<div style="flex:0 0 ${spec.manual}%;max-width:${spec.manual}%;padding:8px 6px;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">근거</div>`;
+  h += `<div style="flex:0 0 ${spec.first}%;max-width:${spec.first}%;padding:1.5mm 1mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">평가항목 / 질문(확인) 내용</div>`;
+  h += `<div style="flex:0 0 ${spec.manual}%;max-width:${spec.manual}%;padding:1.5mm 1mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">근거</div>`;
   spec.labels.forEach(lb => {
-    h += `<div style="flex:0 0 ${spec.judge}%;max-width:${spec.judge}%;padding:8px 2px;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">${lb}</div>`;
+    h += `<div style="flex:0 0 ${spec.judge}%;max-width:${spec.judge}%;padding:1.5mm 0.5mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">${lb}</div>`;
   });
-  h += `<div style="flex:0 0 ${spec.remark}%;max-width:${spec.remark}%;padding:8px 6px;box-sizing:border-box;">비고</div>`;
+  h += `<div style="flex:0 0 ${spec.remark}%;max-width:${spec.remark}%;padding:1.5mm 1mm;box-sizing:border-box;">비고</div>`;
   h += `</div>`;
 
   // 블록 3~: 본문 행
@@ -14782,16 +14835,22 @@ function buildChecklistSheetBody(year, station, type, record) {
 
   // 마지막: General Comment (참고 양식과 동일하게 빈 박스 — 수기 기입용)
   h += `<div class="sheet-row" style="display:flex;background:#D9D9D9;font-weight:700;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
-  h += `<div style="flex:1 1 100%;padding:8px 10px;box-sizing:border-box;">General Comment</div>`;
+  h += `<div style="flex:1 1 100%;padding:1.5mm 2mm;box-sizing:border-box;">General Comment</div>`;
   h += `</div>`;
-  h += `<div class="sheet-row" style="display:flex;min-height:90px;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
-  h += `<div style="flex:1 1 100%;padding:8px 10px;box-sizing:border-box;">&nbsp;</div>`;
+  h += `<div class="sheet-row" style="display:flex;height:22mm;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
+  h += `<div style="flex:1 1 100%;padding:1.5mm 2mm;box-sizing:border-box;">&nbsp;</div>`;
   h += `</div>`;
 
   return h;
 }
 
-// 인쇄용 완전 문서
+// 시트 본문 공통 타이포 (인쇄창·오프스크린 호스트 동일)
+function _sheetBaseCSS(prefix) {
+  const p = prefix ? prefix : 'body';
+  return `${p}{font-family:${_SHEET_FONT};font-size:8pt;line-height:1.35;color:#000;}`;
+}
+
+// 인쇄용 완전 문서 — 로드 시 A4 페이지 단위로 분할한다
 function buildChecklistSheetDoc(year, station, type, record) {
   const reg = CHECKLIST_REGISTRY[type];
   const title = (reg && reg.name) || getTypeLabel(type) || type;
@@ -14801,24 +14860,24 @@ function buildChecklistSheetDoc(year, station, type, record) {
   return '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">'
     + `<title>${_esc(docTitle)}</title>`
     + '<style>'
-    + '@page { size: A4 portrait; margin: 14mm 12mm 18mm; }'
-    + '* { box-sizing: border-box; }'
-    + `body { margin:0; font-family:${_SHEET_FONT}; font-size:10.5pt; line-height:1.5; color:#000; -webkit-print-color-adjust:exact; print-color-adjust:exact; }`
-    + '.sheet-row { page-break-inside: avoid; break-inside: avoid; }'
-    + '.sheet-block { page-break-inside: avoid; break-inside: avoid; }'
-    + '.sheet-wrap { width:100%; }'
-    + '.sheet-footer { display:none; font-size:9pt; color:#555; }'
-    + '@media screen { body { background:#F4F6F8; padding:0 0 40px; } .sheet-wrap { background:#fff; max-width:820px; margin:0 auto; padding:28px 32px 40px; box-shadow:0 4px 24px rgba(0,0,0,0.12); } }'
-    + '@media print { .no-print { display:none !important; } .sheet-wrap { max-width:none; margin:0; padding:0; box-shadow:none; }'
-    + '  .sheet-footer { display:flex; position:fixed; left:0; right:0; bottom:-12mm; justify-content:center; } '
-    + '  .sheet-footer .pg::after { content: counter(page); } .sheet-footer .dt { position:absolute; right:0; } }'
-    + '.tbar { position:sticky; top:0; background:#303A3C; color:#fff; padding:12px 20px; display:flex; align-items:center; gap:14px; font-family:' + _SHEET_FONT + '; font-size:13px; }'
-    + '.tbar button { background:#D20015; color:#fff; border:0; border-radius:999px; padding:8px 20px; font-size:13px; font-weight:600; cursor:pointer; }'
+    + `@page { size: A4 portrait; margin: 0; }`
+    + '*{box-sizing:border-box;}'
+    + 'body{margin:0;background:#F4F6F8;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+    + _sheetBaseCSS('body')
+    + _sheetPageCSS('', true)
+    + '.sheet-wrap{width:' + _SHEET_CONTENT_W + 'mm;margin:0 auto;}'
+    + '@media screen{.sheet-page{margin:0 auto 10px;box-shadow:0 2px 12px rgba(0,0,0,0.15);} .sheet-wrap{padding-top:10px;}}'
+    + '@media print{body{background:#fff;} .no-print{display:none !important;} .sheet-wrap{width:auto;margin:0;padding:0;} .sheet-page{margin:0;box-shadow:none;}}'
+    + '.tbar{position:sticky;top:0;z-index:9;background:#303A3C;color:#fff;padding:10px 18px;display:flex;align-items:center;gap:14px;font-size:12px;}'
+    + '.tbar button{background:#D20015;color:#fff;border:0;border-radius:999px;padding:7px 18px;font-size:12px;font-weight:600;cursor:pointer;}'
     + '</style></head><body>'
     + '<div class="tbar no-print"><button onclick="window.print()">인쇄 / PDF로 저장</button>'
-    + '<span>인쇄 대화상자의 <b>대상</b>에서 &quot;PDF로 저장&quot;을 선택하세요.</span></div>'
-    + `<div class="sheet-wrap">${body}</div>`
-    + `<div class="sheet-footer"><span class="pg"></span><span class="dt">${today}</span></div>`
+    + '<span>인쇄 대화상자에서 <b>대상 = PDF로 저장</b>, <b>여백 = 없음</b>, <b>머리글 및 바닥글 = 해제</b>로 설정하세요.</span></div>'
+    + `<div class="sheet-wrap" id="sheetWrap">${body}</div>`
+    + `<script>var __p = ${_SHEET_PAGINATE_SRC};`
+    + `function __run(){ __p(document.getElementById('sheetWrap'), ${JSON.stringify(today)}); }`
+    + `if (document.readyState === 'complete') __run(); else window.addEventListener('load', __run);`
+    + '<\/script>'
     + '</body></html>';
 }
 
@@ -14832,104 +14891,83 @@ function printChecklistSheet(year, station, type, company) {
     w.document.open();
     w.document.write(doc);
     w.document.close();
-    setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* 사용자가 상단 버튼으로 직접 인쇄 */ } }, 500);
     return;
   }
   // 팝업 차단 폴백 — 화면 밖 iframe으로 인쇄
   const ifr = document.createElement('iframe');
   ifr.setAttribute('style', 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;');
   ifr.onload = () => {
-    try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch (e) { console.error(e); }
+    try { ifr.contentWindow.focus(); setTimeout(() => ifr.contentWindow.print(), 300); } catch (e) { console.error(e); }
     setTimeout(() => ifr.remove(), 60000);
   };
   document.body.appendChild(ifr);
   ifr.srcdoc = doc;
 }
 
-// 출력 경로 ②: 원클릭 PDF 다운로드 (html2canvas 행 단위 캡처 + jsPDF)
+// 진행 상황 토스트 (하나를 갱신 — 페이지 수만큼 토스트가 쌓이지 않도록)
+function _sheetProgress(msg) {
+  let t = document.getElementById('sheetProgressToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'sheetProgressToast';
+    t.style.cssText = 'position:fixed;left:50%;top:24px;transform:translateX(-50%);background:#303A3C;color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,0.15);z-index:9999;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  return t;
+}
+function _sheetProgressDone() {
+  const t = document.getElementById('sheetProgressToast');
+  if (t) t.remove();
+}
+
+// 출력 경로 ②: 원클릭 PDF 다운로드
+// 페이지 컨테이너를 먼저 만들고 **페이지 단위로** 캡처한다.
+// (v19.46.x는 시트 전체를 1회 캡처한 뒤 DOM에서 잰 행 좌표로 잘랐는데,
+//  html2canvas가 만든 캔버스 높이가 실제 DOM보다 커서 좌표가 어긋나 행 중간이 잘렸음.)
 async function downloadChecklistSheetPDF(year, station, type, company) {
   const record = _findAssessmentRecord(year, station, type, company);
   if (!record) { showToast('해당 점검표의 저장된 기록이 없습니다.', 'warning'); return; }
   const hasH2C = typeof html2canvas !== 'undefined';
   const hasJsPDF = typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF;
   if (!hasH2C || !hasJsPDF) { _sdToast(`PDF 라이브러리 로딩 실패 (h2c:${hasH2C}, jspdf:${!!hasJsPDF})`, false); return; }
-  _sdToast('PDF 생성 중…');
+  _sheetProgress('PDF 준비 중…');
+
+  const style = document.createElement('style');
+  style.id = 'checklistSheetStyle';
+  style.textContent = _sheetBaseCSS('#checklistSheetHost') + _sheetPageCSS('#checklistSheetHost', false);
+  document.head.appendChild(style);
 
   const host = document.createElement('div');
   host.id = 'checklistSheetHost';
-  host.style.cssText = `position:fixed;left:-10000px;top:0;width:${_SHEET_W}px;background:#ffffff;`
-    + `font-family:${_SHEET_FONT};font-size:11px;line-height:1.5;color:#000;`;
+  host.style.cssText = `position:fixed;left:-10000px;top:0;width:${_SHEET_CONTENT_W}mm;background:#ffffff;`;
   host.innerHTML = buildChecklistSheetBody(year, station, type, record);
   document.body.appendChild(host);
 
   try {
+    const paginate = new Function('return ' + _SHEET_PAGINATE_SRC)();
+    const pageCount = paginate(host, _sheetToday());
+    const pages = Array.from(host.querySelectorAll('.sheet-page'));
+
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const marginX = 12, marginTop = 14, marginBottom = 16;
-    const contentW = pageW - marginX * 2;
-    const bottomLimit = pageH - marginBottom;
-    const maxBlockH = bottomLimit - marginTop;
-    let cursorY = marginTop;
-
-    // 캡처는 시트 전체를 한 번만 — 블록마다 html2canvas를 부르면 호출마다 문서 전체를
-    // 복제하느라 점검표 1장에 수십 초가 걸린다. 대신 행(자식 블록)의 offsetTop을 미리 읽어
-    // '어디서 자를지'를 계산해 두고, 한 장의 캔버스를 그 지점에서만 잘라 쪽을 나눈다.
-    // → html2canvas 호출 1회 + 행이 절대 잘리지 않는 페이지 분할.
-    const hostPxPerMM = host.offsetWidth / contentW;
-    const maxPagePx = maxBlockH * hostPxPerMM;      // 한 쪽에 담을 수 있는 host 기준 높이(px)
-    const kids = Array.from(host.children);
-    const cuts = [];                                 // [{from, to}] host 좌표계 px
-    let pageStart = 0;
-    kids.forEach(k => {
-      const top = k.offsetTop, bottom = top + k.offsetHeight;
-      if (bottom - pageStart > maxPagePx) {
-        if (top > pageStart) { cuts.push({ from: pageStart, to: top }); pageStart = top; }
-        // 단일 블록이 한 쪽보다 큰 예외 — 그 블록 안에서 강제 분할
-        while (bottom - pageStart > maxPagePx) {
-          cuts.push({ from: pageStart, to: pageStart + maxPagePx });
-          pageStart += maxPagePx;
-        }
-      }
-    });
-    const totalPx = host.offsetHeight;
-    if (totalPx > pageStart) cuts.push({ from: pageStart, to: totalPx });
-
-    const canvas = await html2canvas(host, { scale: 2, backgroundColor: '#ffffff', logging: false });
-    const scale = canvas.width / host.offsetWidth;
-    cuts.forEach((cut, idx) => {
-      const srcY = Math.round(cut.from * scale);
-      const srcH = Math.min(Math.round((cut.to - cut.from) * scale), canvas.height - srcY);
-      if (srcH <= 0) return;
-      const slice = document.createElement('canvas');
-      slice.width = canvas.width; slice.height = srcH;
-      const sctx = slice.getContext('2d');
-      sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, slice.width, slice.height);
-      sctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-      if (idx > 0) { pdf.addPage(); cursorY = marginTop; }
-      // compression 인자를 빼면 jsPDF가 PNG를 무압축(raw)으로 넣어 3쪽짜리가 28MB까지 커진다.
-      // 'FAST'(FlateEncode)를 주면 흰 바탕 텍스트 이미지가 수십분의 1로 줄고 선명도는 그대로.
-      pdf.addImage(slice.toDataURL('image/png'), 'PNG', marginX, cursorY, contentW, srcH / scale / hostPxPerMM, undefined, 'FAST');
-    });
-
-    // 푸터: 쪽번호(가운데) + 출력일(오른쪽) — 모두 ASCII라 한글 폰트 불필요
-    const today = _sheetToday();
-    const totalPages = pdf.internal.getNumberOfPages();
-    for (let p = 1; p <= totalPages; p++) {
-      pdf.setPage(p);
-      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor('#555555');
-      pdf.text(`${p}/${totalPages}`, pageW / 2, pageH - 8, { align: 'center' });
-      pdf.text(today, pageW - marginX, pageH - 8, { align: 'right' });
+    for (let i = 0; i < pages.length; i++) {
+      _sheetProgress(`PDF 생성 중… ${i + 1}/${pages.length}쪽`);
+      const c = await html2canvas(pages[i], { scale: 2.5, backgroundColor: '#ffffff', logging: false });
+      if (i > 0) pdf.addPage();
+      // compression 'FAST'(FlateEncode) 미지정 시 jsPDF가 PNG를 무압축으로 넣어 용량이 수십 배가 된다
+      pdf.addImage(c.toDataURL('image/png'), 'PNG', 0, 0, _SHEET_PAGE.w, _SHEET_PAGE.h, undefined, 'FAST');
     }
-
     pdf.save(_sheetFilename(year, station, type) + '.pdf');
-    _sdToast('PDF 다운로드 완료');
+    _sheetProgressDone();
+    _sdToast(`PDF 다운로드 완료 (${pageCount}쪽)`);
   } catch (err) {
     console.error(err);
+    _sheetProgressDone();
     _sdToast('PDF 생성 실패: ' + (err && err.message ? err.message : err), false);
   } finally {
     host.remove();
+    style.remove();
   }
 }
 
