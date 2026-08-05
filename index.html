@@ -1604,7 +1604,7 @@ select.apple-input {
       <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">플랫폼 버전</span>
-          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.47.0</span>
+          <span style="font-weight:700;color:#1a1c1d;" id="sysVersion">v19.47.1</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(192,206,209,0.2);">
           <span style="color:#566062;">환경</span>
@@ -1782,7 +1782,7 @@ select.apple-input {
 // CONFIG
 // ============================================================================
 const CONFIG = {
-  version: '19.47.0',
+  version: '19.47.1',
   storage: {
     data: 'eastar_maturity_data',
     auditors: 'eastar_auditors',
@@ -14743,15 +14743,18 @@ function _sheetRowsHTML(type, record) {
   const scores = (record && record.scores) || {};
   const remarks = (record && record.remarks) || {};
   const rowOpen = `<div class="sheet-row" style="display:flex;align-items:stretch;min-height:6.5mm;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
-  const cell = (w, extra, last) => `<div style="flex:0 0 ${w}%;max-width:${w}%;padding:1.2mm 1.5mm;box-sizing:border-box;${last ? '' : `border-right:1px solid ${_SHEET_BD};`}${extra || ''}">`;
-  const judgeCell = `padding:1.2mm 0.5mm;display:flex;align-items:center;justify-content:center;text-align:center;`;
+  // v19.47.1: 셀 내용을 세로 중앙 정렬 — 행 높이는 가장 긴 열(질문+확인사항)이 정하므로
+  // 나머지 열(근거·판정·비고)이 위/아래로 쏠려 보이던 것을 바로잡는다.
+  const cell = (w, extra, last) => `<div style="flex:0 0 ${w}%;max-width:${w}%;padding:1.2mm 1.5mm;box-sizing:border-box;display:flex;align-items:center;${last ? '' : `border-right:1px solid ${_SHEET_BD};`}${extra || ''}"><div style="width:100%;">`;
+  const cellEnd = `</div></div>`;
+  const judgeCell = `padding:1.2mm 0.5mm;justify-content:center;text-align:center;`;
 
   let h = '';
   for (const [catName, catData] of Object.entries(checklist)) {
     const items = (catData && catData.items) || [];
     // 카테고리 구분 행 (전폭)
     h += rowOpen;
-    h += `<div style="flex:1 1 100%;padding:1.4mm 1.5mm;box-sizing:border-box;font-weight:700;">${_esc(catName)}</div>`;
+    h += `<div style="flex:1 1 100%;padding:1.4mm 1.5mm;box-sizing:border-box;display:flex;align-items:center;font-weight:700;">${_esc(catName)}</div>`;
     h += `</div>`;
 
     items.forEach(item => {
@@ -14765,21 +14768,21 @@ function _sheetRowsHTML(type, record) {
       h += cell(spec.first);
       h += (showNum ? _esc(num) + ' ' : '') + _sheetEsc(item.text || '');
       if (item.verification) h += `<div style="margin-top:1.2mm;">${_sheetEsc(item.verification)}</div>`;
-      h += `</div>`;
+      h += cellEnd;
       // 2열: 근거
       h += cell(spec.manual, 'font-size:7pt;');
       h += _sheetEsc(item.manual || '');
-      h += `</div>`;
+      h += cellEnd;
       // 판정 열
       marks.forEach(m => {
         h += cell(spec.judge, judgeCell);
         h += _sheetMarkHTML(m);
-        h += `</div>`;
+        h += cellEnd;
       });
       // 비고
       h += cell(spec.remark, 'font-size:7.5pt;', true);
       h += _sheetEsc(remarks[item.id] || '');
-      h += `</div>`;
+      h += cellEnd;
       h += `</div>`;
     });
   }
@@ -14802,8 +14805,8 @@ function buildChecklistSheetBody(year, station, type, record) {
 
   const infoRow = (l1, v1, l2, v2) =>
     `<div class="sheet-row" style="display:flex;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`
-    + `<div style="flex:0 0 50%;max-width:50%;padding:1.6mm 2mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">${_esc(l1)}: ${_esc(v1)}</div>`
-    + `<div style="flex:0 0 50%;max-width:50%;padding:1.6mm 2mm;box-sizing:border-box;">${_esc(l2)}: ${_esc(v2)}</div>`
+    + `<div style="flex:0 0 50%;max-width:50%;padding:1.6mm 2mm;box-sizing:border-box;display:flex;align-items:center;border-right:1px solid ${_SHEET_BD};">${_esc(l1)}: ${_esc(v1)}</div>`
+    + `<div style="flex:0 0 50%;max-width:50%;padding:1.6mm 2mm;box-sizing:border-box;display:flex;align-items:center;">${_esc(l2)}: ${_esc(v2)}</div>`
     + `</div>`;
 
   let h = '';
@@ -14822,12 +14825,12 @@ function buildChecklistSheetBody(year, station, type, record) {
 
   // 블록 2: 열 헤더 (1쪽에만 — 참고 양식과 동일)
   h += `<div class="sheet-row" style="display:flex;background:#D9D9D9;font-weight:700;text-align:center;border:1px solid ${_SHEET_BD};">`;
-  h += `<div style="flex:0 0 ${spec.first}%;max-width:${spec.first}%;padding:1.5mm 1mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">평가항목 / 질문(확인) 내용</div>`;
-  h += `<div style="flex:0 0 ${spec.manual}%;max-width:${spec.manual}%;padding:1.5mm 1mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">근거</div>`;
+  h += `<div style="flex:0 0 ${spec.first}%;max-width:${spec.first}%;padding:1.5mm 1mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-right:1px solid ${_SHEET_BD};">평가항목 / 질문(확인) 내용</div>`;
+  h += `<div style="flex:0 0 ${spec.manual}%;max-width:${spec.manual}%;padding:1.5mm 1mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-right:1px solid ${_SHEET_BD};">근거</div>`;
   spec.labels.forEach(lb => {
-    h += `<div style="flex:0 0 ${spec.judge}%;max-width:${spec.judge}%;padding:1.5mm 0.5mm;box-sizing:border-box;border-right:1px solid ${_SHEET_BD};">${lb}</div>`;
+    h += `<div style="flex:0 0 ${spec.judge}%;max-width:${spec.judge}%;padding:1.5mm 0.5mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-right:1px solid ${_SHEET_BD};">${lb}</div>`;
   });
-  h += `<div style="flex:0 0 ${spec.remark}%;max-width:${spec.remark}%;padding:1.5mm 1mm;box-sizing:border-box;">비고</div>`;
+  h += `<div style="flex:0 0 ${spec.remark}%;max-width:${spec.remark}%;padding:1.5mm 1mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center;">비고</div>`;
   h += `</div>`;
 
   // 블록 3~: 본문 행
@@ -14835,7 +14838,7 @@ function buildChecklistSheetBody(year, station, type, record) {
 
   // 마지막: General Comment (참고 양식과 동일하게 빈 박스 — 수기 기입용)
   h += `<div class="sheet-row" style="display:flex;background:#D9D9D9;font-weight:700;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
-  h += `<div style="flex:1 1 100%;padding:1.5mm 2mm;box-sizing:border-box;">General Comment</div>`;
+  h += `<div style="flex:1 1 100%;padding:1.5mm 2mm;box-sizing:border-box;display:flex;align-items:center;">General Comment</div>`;
   h += `</div>`;
   h += `<div class="sheet-row" style="display:flex;height:22mm;border-left:1px solid ${_SHEET_BD};border-right:1px solid ${_SHEET_BD};border-bottom:1px solid ${_SHEET_BD};">`;
   h += `<div style="flex:1 1 100%;padding:1.5mm 2mm;box-sizing:border-box;">&nbsp;</div>`;
